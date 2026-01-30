@@ -1,10 +1,5 @@
 run = """
 export LD_LIBRARY_PATH=$PYTHON_LD_LIBRARY_PATH:$LD_LIBRARY_PATH && \
-pip install -r backend/requirements.txt && \
-npm install --prefix Frontend && \
-npm run build --prefix Frontend && \
-mkdir -p backend/dist && \
-cp -r Frontend/dist/. backend/dist/ && \
 cd backend && \
 python main.py
 """
