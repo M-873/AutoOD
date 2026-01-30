@@ -3,7 +3,7 @@ echo "🚀 Starting Build Process..."
 
 # 1. Install Python Dependencies (Lightweight only)
 echo "📦 Installing Python dependencies..."
-pip install -r backend/requirements.txt
+pip install --no-cache-dir -r backend/requirements.txt
 
 # 2. Build Frontend
 echo "🏗️ Building Frontend (this may take a few minutes)..."
