@@ -1,0 +1,4 @@
+project_id = "ffazrpeefrcrpwfbomqb"
+
+[functions.auto-annotate]
+verify_jwt = false

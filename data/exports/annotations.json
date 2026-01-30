@@ -1,0 +1,50 @@
+{
+  "annotations": {
+    "test_image.jpg": [
+      {
+        "class": "person",
+        "confidence": 0.95,
+        "bbox": [
+          100,
+          100,
+          200,
+          200
+        ],
+        "shape": "rect"
+      },
+      {
+        "class": "car",
+        "confidence": 0.88,
+        "bbox": [
+          300,
+          150,
+          450,
+          300
+        ],
+        "shape": "polygon",
+        "polygon_points": [
+          [
+            300,
+            150
+          ],
+          [
+            450,
+            150
+          ],
+          [
+            450,
+            300
+          ],
+          [
+            300,
+            300
+          ]
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "model": "YOLOv8n",
+    "conf": 0.25
+  }
+}
