@@ -1,5 +1,1 @@
-run = """
-export LD_LIBRARY_PATH=$PYTHON_LD_LIBRARY_PATH:$LD_LIBRARY_PATH && \
-cd backend && \
-python main.py
-"""
+run = "bash start.sh"
