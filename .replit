@@ -1,1 +1,6 @@
 run = "bash start.sh"
+
+[deployment]
+run = "bash start.sh"
+deploymentTarget = "cloudrun"
+
