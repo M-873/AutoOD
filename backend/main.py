@@ -2,6 +2,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import cv2
@@ -345,9 +346,9 @@ app = FastAPI(title="AutoOD API", version="1.0.0")
 # CORS middleware to allow React frontend to communicate
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://autood-f9bq.onrender.com", "http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -1043,9 +1044,6 @@ async def get_available_classes():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-from fastapi.staticfiles import StaticFiles
-import os
 
 # Create a 'dist' directory if it doesn't exist (it will hold the built frontend)
 frontend_dist = os.path.join(os.path.dirname(__file__), "dist")
