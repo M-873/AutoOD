@@ -1049,12 +1049,12 @@ frontend_dist = os.path.join(os.path.dirname(__file__), "dist")
 if not os.path.exists(frontend_dist):
     os.makedirs(frontend_dist, exist_ok=True)
 
-# Mount the static files (built frontend)
-app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+# Serve static files from the dist directory
+# This will serve index.html for any non-API routes
+if os.path.exists(os.path.join(frontend_dist, "index.html")):
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-from transformers import DetrImageProcessor, DetrForObjectDetection
-from effdet import create_model
