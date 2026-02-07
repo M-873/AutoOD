@@ -1,21 +1,12 @@
 { pkgs }: {
   deps = [
+    # Core Python and Node.js
     pkgs.python311
     pkgs.python311Packages.pip
-    pkgs.python311Packages.torch
-    pkgs.python311Packages.torchvision
-    pkgs.python311Packages.transformers
-    pkgs.python311Packages.numpy
-    pkgs.python311Packages.pillow
-    pkgs.python311Packages.opencv4
-    pkgs.python311Packages.pandas
-    pkgs.python311Packages.matplotlib
-    pkgs.python311Packages.scipy
-    pkgs.python311Packages.seaborn
-    pkgs.python311Packages.requests
-    pkgs.python311Packages.tqdm
-    pkgs.python311Packages.pyyaml
     pkgs.nodejs-20_x
+    
+    # System libraries required for ML packages
+    # These will be installed via pip in requirements.txt
     pkgs.libuuid
     pkgs.libGL
     pkgs.glib
