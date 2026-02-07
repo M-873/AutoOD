@@ -383,16 +383,9 @@ async def root():
 
 @app.on_event("startup")
 async def _prefetch():
-    ids = [
-        "torchvision/fasterrcnn_resnet50_fpn",
-        "torchvision/retinanet_resnet50_fpn",
-        "torchvision/ssd300_vgg16",
-    ]
-    for mid in ids:
-        try:
-            model_manager.load_model(mid)
-        except Exception:
-            pass
+    # Prefetch in a non-blocking way or skip if too slow
+    # For now, let's keep it minimal to ensure fast health check
+    pass
 
 @app.get("/api/models")
 async def get_models():
