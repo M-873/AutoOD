@@ -2,7 +2,6 @@
     "name": "autood-root",
     "version": "1.0.0",
     "description": "Root management for AutoOD project",
-    "main": "index.js",
     "scripts": {
         "install-all": "npm install --prefix Frontend && pip install -r backend/requirements.txt",
         "build": "bash build.sh",
