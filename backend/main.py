@@ -16,21 +16,13 @@ import base64
 from datetime import datetime
 from pathlib import Path
 import sys
-from ultralytics import YOLO
-import torch
-from torchvision.transforms.functional import to_tensor
-from torchvision.models.detection import (
-    fasterrcnn_resnet50_fpn,
-    FasterRCNN_ResNet50_FPN_Weights,
-    maskrcnn_resnet50_fpn,
-    MaskRCNN_ResNet50_FPN_Weights,
-    retinanet_resnet50_fpn,
-    RetinaNet_ResNet50_FPN_Weights,
-    ssd300_vgg16,
-    SSD300_VGG16_Weights,
-)
-from transformers import DetrImageProcessor, DetrForObjectDetection
-from effdet import create_model
+# Defer heavy imports to ensure instant server startup for health checks
+# import cv2
+# import numpy as np
+# from PIL import Image
+# from ultralytics import YOLO
+# from transformers import DetrImageProcessor, DetrForObjectDetection
+# from effdet import create_model
 
 
 
@@ -57,6 +49,18 @@ class MultiModelManager:
     def load_model(self, model_id: str):
         if model_id in self._cache:
             return self._cache[model_id]
+
+        print(f"Loading heavy ML libraries for {model_id}...")
+        import torch
+        from torchvision.models.detection import (
+            fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights,
+            maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights,
+            retinanet_resnet50_fpn, RetinaNet_ResNet50_FPN_Weights,
+            ssd300_vgg16, SSD300_VGG16_Weights,
+        )
+        from ultralytics import YOLO
+        from transformers import DetrImageProcessor, DetrForObjectDetection
+        from effdet import create_model
 
         backend, name = model_id.split("/", 1)
         if backend == "yolo":
@@ -108,6 +112,8 @@ class MultiModelManager:
     def detect(self, model_id: str, image: np.ndarray, conf: float = 0.25,
                class_filter: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         try:
+            from PIL import Image
+            import torch
             backend, name = model_id.split("/", 1)
             print(f"Loading model: {model_id} (backend: {backend}, name: {name})")
             model, categories = self.load_model(model_id)
@@ -150,6 +156,8 @@ class MultiModelManager:
                 raise
 
         if backend == "torchvision":
+            from torchvision.transforms.functional import to_tensor
+            import torch
             tensor = to_tensor(image)
             with torch.no_grad():
                 outputs = model([tensor])[0]
@@ -265,6 +273,7 @@ from core.exporter import Exporter
 def detect_objects_in_image(model_manager, image, model_name: str, conf: float = 0.25, 
                            class_filter: Optional[List[str]] = None) -> List[Dict]:
     """Detect objects in image using YOLO"""
+    import torch
     # Run prediction
     results = model_manager.predict(model_name, image, conf=conf)
     
@@ -296,6 +305,7 @@ def detect_objects_in_image(model_manager, image, model_name: str, conf: float =
 def draw_annotations(image: np.ndarray, detections: List[Dict], 
                     color: tuple = (102, 126, 234), thickness: int = 2) -> np.ndarray:
     """Draw bounding boxes on image"""
+    import cv2
     img_copy = image.copy()
     
     for det in detections:

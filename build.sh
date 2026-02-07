@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 echo "🚀 Starting Build Process..."
 
 # 1. Install Python Dependencies (Lightweight only)
@@ -7,7 +8,7 @@ pip install --no-cache-dir -r backend/requirements.txt
 
 # 2. Build Frontend
 echo "🏗️ Building Frontend (this may take a few minutes)..."
-npm install --prefix Frontend
+npm install --prefix Frontend --no-audit --no-fund
 npm run build --prefix Frontend
 
 # 3. Move Assets
