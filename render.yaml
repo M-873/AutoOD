@@ -3,7 +3,7 @@ services:
     name: autood
     env: python
     buildCommand: bash build.sh
-    startCommand: cd backend && gunicorn main_render:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-10000} --timeout 120 --keep-alive 5
+    startCommand: bash start.sh
     envVars:
       - key: PORT
         value: 10000

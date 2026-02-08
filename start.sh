@@ -11,7 +11,7 @@ cd backend
 
 # Start the application with gunicorn
 echo "🔥 Starting FastAPI application with Gunicorn..."
-gunicorn main:app \
+gunicorn main_render:app \
   -w 2 \
   -k uvicorn.workers.UvicornWorker \
   --bind 0.0.0.0:${PORT:-10000} \
