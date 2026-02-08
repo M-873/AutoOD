@@ -19,7 +19,5 @@ mkdir -p backend/dist
 rm -rf backend/dist/*
 cp -r Frontend/dist/. backend/dist/
 
-# 4. Create torch cache directory
-mkdir -p /opt/data/torch
-
+# 4. Finish Build
 echo "✅ Build Complete! The app is ready to run."

@@ -3,6 +3,9 @@
 
 echo "🚀 Starting AutoOD Application..."
 
+# Create torch cache directory on persistent disk
+mkdir -p /opt/data/torch
+
 # Set Python path to include backend directory
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
