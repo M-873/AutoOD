@@ -212,8 +212,8 @@ class ExportRequest(BaseModel):
     formats: List[str]
     classes: List[str]
 
-@app.get("/")
-async def root():
+@app.get("/api/health")
+async def health_check():
     """Health check endpoint"""
     return {
         "status": "running",
@@ -399,9 +399,28 @@ if not os.path.exists(frontend_dist):
     os.makedirs(frontend_dist, exist_ok=True)
 
 # Serve static files from the dist directory
-# This will serve index.html for any non-API routes
-if os.path.exists(os.path.join(frontend_dist, "index.html")):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+# Serve static files from the dist directory with SPA support
+if os.path.exists(frontend_dist):
+    # 1. Mount assets directory explicitly
+    assets_path = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # 2. Catch-all route to serve index.html for client-side routing
+    # This must be defined AFTER all API routes
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Check if dynamic file exists in root of dist (e.g. favicon.ico, robots.txt)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Fallback to index.html for all other routes (SPA)
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+            
+        return JSONResponse(status_code=404, content={"message": "Frontend not found"})
 
 if __name__ == "__main__":
     import uvicorn
