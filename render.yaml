@@ -19,7 +19,7 @@ services:
       sizeGB: 2
 
   # Frontend Static Site
-  - type: static
+  - type: static_site
     name: autood-frontend
     env: node
     rootDir: Frontend
