@@ -1,19 +1,33 @@
 services:
+  # Backend Web Service
   - type: web
-    name: autood
+    name: autood-backend
     env: python
-    buildCommand: bash build.sh
-    startCommand: bash start.sh
+    rootDir: backend
+    buildCommand: pip install -r requirements_render.txt
+    startCommand: gunicorn main_render:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: PORT
         value: 10000
       - key: PYTHON_VERSION
         value: 3.9.21
-      - key: NODE_VERSION
-        value: 18
       - key: TORCH_HOME
         value: /opt/data/torch
     disk:
       name: autood-data
       mountPath: /opt/data
       sizeGB: 2
+
+  # Frontend Static Site
+  - type: static
+    name: autood-frontend
+    env: node
+    rootDir: Frontend
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: autood-backend
+          property: host
