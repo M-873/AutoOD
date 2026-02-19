@@ -20,4 +20,8 @@ export interface ModelResponse {
   default: string;
 }
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+// API_BASE_URL will be empty if not provided, defaulting to relative paths (same origin)
+const rawApiUrl = import.meta.env.VITE_API_URL || '';
+export const API_BASE_URL = rawApiUrl && !rawApiUrl.startsWith('http')
+  ? `https://${rawApiUrl}`
+  : rawApiUrl;
