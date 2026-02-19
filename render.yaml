@@ -3,6 +3,7 @@ services:
   - type: web
     name: autood-backend
     runtime: python
+    plan: free
     rootDir: backend
     buildCommand: pip install -r requirements_render.txt
     startCommand: gunicorn main_render:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
@@ -12,11 +13,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.9.21
       - key: TORCH_HOME
-        value: /opt/data/torch
-    disk:
-      name: autood-data
-      mountPath: /opt/data
-      sizeGB: 2
+        value: /tmp/torch
 
   # Frontend Static Site
   - type: web
