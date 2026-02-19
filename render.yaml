@@ -2,13 +2,13 @@ services:
   # Backend Web Service
   - type: web
     name: autood-backend
-    env: python
+    runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements_render.txt
     startCommand: gunicorn main_render:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: PORT
-        value: 10000
+        value: '10000'
       - key: PYTHON_VERSION
         value: 3.9.21
       - key: TORCH_HOME
@@ -19,12 +19,12 @@ services:
       sizeGB: 2
 
   # Frontend Static Site
-  - type: static_site
+  - type: web
     name: autood-frontend
-    env: node
+    runtime: static
     rootDir: Frontend
     buildCommand: npm install && npm run build
-    publishDir: dist
+    staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
         fromService:
