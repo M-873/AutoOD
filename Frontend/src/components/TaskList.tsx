@@ -38,13 +38,21 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
+      
+      if (isDemoMode) {
+        const demoTasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
+        demoTasks.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setTasks(demoTasks);
+      } else {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setTasks(data || []);
+        if (error) throw error;
+        setTasks(data || []);
+      }
     } catch (error) {
       console.error('Error fetching tasks:', error);
     } finally {

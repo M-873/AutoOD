@@ -84,29 +84,52 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
   const onSubmit = async (data: TaskFormData) => {
     setIsLoading(true);
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData.user) {
-        throw new Error('You must be logged in to create a task');
+      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
+      
+      let userId = 'demo-user-id';
+      if (!isDemoMode) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) {
+          throw new Error('You must be logged in to create a task');
+        }
+        userId = userData.user.id;
+      } else {
+        const demoUser = localStorage.getItem('demo_user_auth');
+        if (!demoUser) throw new Error('You must be logged in to create a task');
+        userId = JSON.parse(demoUser).id;
       }
 
       let imageUrl: string | null = null;
-
-      // For now, we'll store the image as a data URL (base64)
-      // In production, you'd want to upload to Supabase Storage
       if (imagePreview) {
         imageUrl = imagePreview;
       }
 
-      const { error } = await supabase.from('tasks').insert({
-        name: data.name,
-        assignee: data.assignee || null,
-        user_id: userData.user.id,
-        image_url: imageUrl,
-        status: 'pending',
-        progress: 0,
-      });
-
-      if (error) throw error;
+      if (isDemoMode) {
+        const newTask = {
+          id: Math.random().toString(36).substring(2, 11),
+          name: data.name,
+          assignee: data.assignee || null,
+          user_id: userId,
+          image_url: imageUrl,
+          status: 'pending',
+          progress: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        const tasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
+        tasks.push(newTask);
+        localStorage.setItem('demo_tasks', JSON.stringify(tasks));
+      } else {
+        const { error } = await supabase.from('tasks').insert({
+          name: data.name,
+          assignee: data.assignee || null,
+          user_id: userId,
+          image_url: imageUrl,
+          status: 'pending',
+          progress: 0,
+        });
+        if (error) throw error;
+      }
 
       toast.success('Task created successfully');
       form.reset();
