@@ -14,17 +14,3 @@ services:
         value: 3.9.21
       - key: TORCH_HOME
         value: /tmp/torch
-
-  # Frontend Static Site
-  - type: web
-    name: autood-frontend
-    runtime: static
-    rootDir: Frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: autood-backend
-          property: host
