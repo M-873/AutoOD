@@ -120,35 +120,9 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
           if (m === 'yolo/yolov8n.pt') {
             displayName = 'M873.1';
             description = 'Fast (Nano)';
-          } else if (m === 'yolo/yolov8s.pt') {
-            displayName = 'M873.2';
-            description = 'Balanced (Small)';
           } else if (m === 'yolo/yolov8m.pt') {
-            displayName = 'M873.3';
+            displayName = 'M873.2';
             description = 'Accurate (Medium)';
-          } else if (m === 'yolo/yolo11n.pt') {
-            displayName = 'M873.4';
-            description = 'Latest Nano';
-          } else if (m === 'yolo/yolo11s.pt') {
-            displayName = 'M873.5';
-            description = 'Latest Small';
-          } else if (m === 'torchvision/fasterrcnn_resnet50_fpn') {
-             displayName = 'M873.6';
-             description = 'Two-stage, high accuracy';
-           } else if (m === 'torchvision/retinanet_resnet50_fpn') {
-             displayName = 'M873.7';
-             description = 'Focal loss, small objects';
-           } else if (m === 'torchvision/ssd300_vgg16') {
-             displayName = 'M873.8';
-             description = 'Lightweight, real-time';
-           } else if (m.includes('torchvision/')) {
-             description = m.includes('fasterrcnn') ? 'Two-stage, high accuracy' : 
-                          m.includes('retinanet') ? 'Focal loss, small objects' : 
-                          m.includes('ssd') ? 'Lightweight, real-time' : 'TorchVision model';
-          } else if (m.includes('transformers/')) {
-            description = 'Transformer-based detection';
-          } else if (m.includes('effdet/')) {
-            description = 'EfficientDet model';
           }
           
           return {

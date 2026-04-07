@@ -21,10 +21,7 @@ import sys
 class MultiModelManager:
     AVAILABLE = [
         "yolo/yolov8n.pt",
-        "yolo/yolov8s.pt",
-        "yolo/yolov8m.pt",
-        "yolo/yolo11n.pt",
-        "yolo/yolo11s.pt",
+        "yolo/yolov8m.pt"
     ]
 
     def __init__(self):
@@ -35,6 +32,12 @@ class MultiModelManager:
             return self._cache[model_id]
 
         print(f"Loading model: {model_id}")
+        
+        # CLEAR CACHE: Ensure only 1 model is loaded at a time to survive Render's 512MB RAM limit
+        self._cache.clear()
+        import gc
+        gc.collect()
+
         from ultralytics import YOLO
         
         backend, name = model_id.split("/", 1)
