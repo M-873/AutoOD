@@ -38,6 +38,9 @@ class MultiModelManager:
         import gc
         gc.collect()
 
+        import torch
+        torch.set_num_threads(1)
+
         from ultralytics import YOLO
         
         backend, name = model_id.split("/", 1)
