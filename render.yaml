@@ -5,12 +5,14 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements_render.txt
+    buildCommand: pip install --no-cache-dir -r requirements_render.txt
     startCommand: gunicorn main_render:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: PORT
         value: '10000'
       - key: PYTHON_VERSION
         value: 3.9.21
+      - key: PIP_NO_CACHE_DIR
+        value: '1'
       - key: TORCH_HOME
         value: /tmp/torch
