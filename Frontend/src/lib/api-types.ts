@@ -21,7 +21,7 @@ export interface ModelResponse {
 }
 
 // API_BASE_URL will be empty if not provided, defaulting to relative paths (same origin)
-const rawApiUrl = import.meta.env.VITE_API_URL || '';
+const rawApiUrl = import.meta.env.VITE_API_URL || 'https://autood.onrender.com';
 export const API_BASE_URL = rawApiUrl && !rawApiUrl.startsWith('http')
   ? `https://${rawApiUrl}`
   : rawApiUrl;
