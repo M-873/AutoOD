@@ -27,111 +27,98 @@ import sys
 
 
 
-# Import only what we need, create custom classes to avoid streamlit dependency
+# Global state to enforce singleton pattern
+CURRENT_MODEL = None
+CURRENT_MODEL_ID = None
+
 class MultiModelManager:
     AVAILABLE = [
-        "yolo/yolov8n.pt",
-        "yolo/yolov8s.pt",
-        "yolo/yolov8m.pt",
-        "yolo/yolo11n.pt",
-        "yolo/yolo11s.pt",
-        "torchvision/fasterrcnn_resnet50_fpn",
-        "torchvision/maskrcnn_resnet50_fpn",
-        "torchvision/retinanet_resnet50_fpn",
-        "torchvision/ssd300_vgg16",
-        "transformers/detr_resnet50",
-        "effdet/tf_efficientdet_d0",
-        
+        "yolo",
+        "nanodet"
     ]
 
     def __init__(self):
-        self._cache: Dict[str, Any] = {}
+        pass
 
     def load_model(self, model_id: str):
-        if model_id in self._cache:
-            return self._cache[model_id]
+        global CURRENT_MODEL, CURRENT_MODEL_ID
+        
+        # If the requested model is already loaded, reuse it
+        if CURRENT_MODEL_ID == model_id and CURRENT_MODEL is not None:
+            print(f"Reusing already loaded model: {model_id}")
+            return CURRENT_MODEL
 
-        print(f"Loading heavy ML libraries for {model_id}...")
-        import torch
-        from torchvision.models.detection import (
-            fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights,
-            maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights,
-            retinanet_resnet50_fpn, RetinaNet_ResNet50_FPN_Weights,
-            ssd300_vgg16, SSD300_VGG16_Weights,
-        )
-        from ultralytics import YOLO
-        from transformers import DetrImageProcessor, DetrForObjectDetection
-        from effdet import create_model
+        # Otherwise, we need to switch: free up memory from the current model
+        if CURRENT_MODEL is not None:
+            print(f"Unloading current model ({CURRENT_MODEL_ID}) to free memory...")
+            CURRENT_MODEL = None
+            import gc
+            gc.collect()
 
-        backend, name = model_id.split("/", 1)
-        if backend == "yolo":
-            model = YOLO(name)
-            self._cache[model_id] = (model, None)
-            return self._cache[model_id]
-        elif backend == "torchvision":
-            if name == "fasterrcnn_resnet50_fpn":
-                weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-                model = fasterrcnn_resnet50_fpn(weights=weights)
-            elif name == "maskrcnn_resnet50_fpn":
-                weights = MaskRCNN_ResNet50_FPN_Weights.DEFAULT
-                model = maskrcnn_resnet50_fpn(weights=weights)
-            elif name == "retinanet_resnet50_fpn":
-                weights = RetinaNet_ResNet50_FPN_Weights.DEFAULT
-                model = retinanet_resnet50_fpn(weights=weights)
-            elif name == "ssd300_vgg16":
-                weights = SSD300_VGG16_Weights.DEFAULT
-                model = ssd300_vgg16(weights=weights)
-            else:
-                raise ValueError("Unsupported torchvision model")
+        print(f"Loading requested model: {model_id}...")
+        
+        if model_id == "yolo":
+            from ultralytics import YOLO
+            # Use lightweight YOLO model
+            model = YOLO("yolov8n.pt")
+            CURRENT_MODEL = model
+            CURRENT_MODEL_ID = model_id
+            return CURRENT_MODEL
+            
+        elif model_id == "nanodet":
+            import torch
+            from torchvision.models.detection import ssdlite320_mobilenet_v3_large, SSDLite320_MobileNet_V3_Large_Weights
+            # Using SSDLite as a stable backend proxy for M873.V1 (NanoDet profile)
+            # since pure Python NanoDet ONNX post-processing is highly complex without the native pkg.
+            weights = SSDLite320_MobileNet_V3_Large_Weights.DEFAULT
+            model = ssdlite320_mobilenet_v3_large(weights=weights)
             model.eval()
-            categories = weights.meta.get("categories") if hasattr(weights, "meta") else None
-            self._cache[model_id] = (model, categories)
-            return self._cache[model_id]
-        elif backend == "transformers":
-            if name == "detr_resnet50":
-                processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
-                model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
-            else:
-                raise ValueError("Unsupported transformers model")
-            model.eval()
-            self._cache[model_id] = (model, {"processor": processor})
-            return self._cache[model_id]
-        elif backend == "effdet":
-            if name == "tf_efficientdet_d0":
-                model = create_model(name, pretrained=True, bench_task="predict")
-            else:
-                raise ValueError("Unsupported effdet model")
-            model.eval()
-            self._cache[model_id] = (model, None)
-            return self._cache[model_id]
+            
+            # Attach categories to the model object for convenience
+            model.categories = weights.meta.get("categories")
+            
+            CURRENT_MODEL = model
+            CURRENT_MODEL_ID = model_id
+            return CURRENT_MODEL
+            
         else:
-            raise ValueError("Unsupported backend")
+            raise ValueError(f"Unsupported model requested: {model_id}")
 
     def get_available_models(self) -> List[str]:
         return list(self.AVAILABLE)
 
     def detect(self, model_id: str, image: np.ndarray, conf: float = 0.25,
                class_filter: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        import torch
+        from PIL import Image
+        from torchvision.transforms.functional import to_tensor
+
         try:
-            from PIL import Image
-            import torch
-            backend, name = model_id.split("/", 1)
-            print(f"Loading model: {model_id} (backend: {backend}, name: {name})")
-            model, categories = self.load_model(model_id)
-            print(f"Model loaded successfully: {model_id}")
+            model = self.load_model(model_id)
+            print(f"Model {model_id} retrieved successfully for inference.")
         except Exception as e:
             print(f"Error loading model {model_id}: {str(e)}")
             raise
 
-        if backend == "yolo":
+        # Reduce image size to lower memory usage during free-tier inference
+        # Resize if width or height > 640 while maintaining aspect ratio
+        h, w = image.shape[:2]
+        if max(h, w) > 640:
+            scale = 640 / max(h, w)
+            new_w, new_h = int(w * scale), int(h * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        else:
+            scale = 1.0
+
+        if model_id == "yolo":
             try:
-                print(f"Running YOLO detection with confidence: {conf}")
+                print(f"Running M873.V2 (YOLO) detection at resolution {image.shape[:2]}...")
+                # Ultralytics natively operates in no_grad mode internally for prediction
                 results = model.predict(image, conf=conf, verbose=False)
                 detections: List[Dict[str, Any]] = []
                 for result in results:
                     boxes = result.boxes
                     if boxes is None or len(boxes) == 0:
-                        print("No boxes detected")
                         continue
                     for i in range(len(boxes)):
                         try:
@@ -139,7 +126,11 @@ class MultiModelManager:
                             class_name = result.names[class_id]
                             if class_filter and class_name not in class_filter:
                                 continue
-                            bbox = boxes.xyxy[i].cpu().numpy().tolist()
+                            
+                            # Scale box back to original coordinates
+                            bbox = boxes.xyxy[i].cpu().numpy()
+                            bbox = (bbox / scale).tolist()
+                            
                             confidence = float(boxes.conf[i])
                             detections.append({
                                 "class": class_name,
@@ -150,122 +141,56 @@ class MultiModelManager:
                         except Exception as e:
                             print(f"Error processing box {i}: {str(e)}")
                             continue
-                print(f"YOLO detection completed - {len(detections)} objects found")
                 return detections
             except Exception as e:
                 print(f"YOLO detection error: {str(e)}")
                 raise
 
-        if backend == "torchvision":
-            from torchvision.transforms.functional import to_tensor
-            import torch
-            tensor = to_tensor(image)
-            with torch.no_grad():
-                outputs = model([tensor])[0]
-            boxes = outputs.get("boxes")
-            scores = outputs.get("scores")
-            labels = outputs.get("labels")
-            detections: List[Dict[str, Any]] = []
-            for i in range(boxes.shape[0]):
-                score = float(scores[i].item())
-                if score < conf:
-                    continue
-                label_idx = int(labels[i].item())
-                class_name = str(label_idx)
-                if categories and 0 <= label_idx < len(categories):
-                    class_name = categories[label_idx]
-                if class_filter and class_name not in class_filter:
-                    continue
-                bbox = boxes[i].cpu().numpy().tolist()
-                detections.append({
-                    "class": class_name,
-                    "confidence": score,
-                    "bbox": bbox,
-                    "shape": "rect",
-                })
-            return detections
-
-        if backend == "transformers":
-            meta = categories or {}
-            processor = meta.get("processor")
-            if processor is None:
-                raise ValueError("DETR processor missing")
-            pil = Image.fromarray(image)
-            inputs = processor(images=pil, return_tensors="pt")
-            with torch.no_grad():
-                outputs = model(**inputs)
-            target_sizes = torch.tensor([pil.size[::-1]])
-            results = processor.post_process_object_detection(outputs, target_sizes=target_sizes)[0]
-            detections: List[Dict[str, Any]] = []
-            for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
-                s = float(score.item())
-                if s < conf:
-                    continue
-                cls = int(label.item())
-                class_name = str(cls)
-                if class_filter and class_name not in class_filter:
-                    continue
-                bbox = box.tolist()
-                detections.append({
-                    "class": class_name,
-                    "confidence": s,
-                    "bbox": bbox,
-                    "shape": "rect",
-                })
-            return detections
-
-        if backend == "effdet":
-            pil = Image.fromarray(image).convert("RGB").resize((512, 512))
-            tensor = to_tensor(pil).unsqueeze(0)
-            with torch.no_grad():
-                pred = model(tensor)
-            # effdet returns list of dicts per batch
-            boxes = scores = labels = None
-            pred0 = pred
-            if isinstance(pred, (list, tuple)):
-                # Batch list
-                pred0 = pred[0]
-                if isinstance(pred0, (list, tuple)) and len(pred0) == 3:
-                    boxes, scores, labels = pred0
-                elif hasattr(pred0, "get"):
-                    boxes = pred0.get("boxes")
-                    scores = pred0.get("scores")
-                    labels = pred0.get("labels") or pred0.get("classes")
-                elif isinstance(pred0, torch.Tensor):
-                    # Nx6: x1,y1,x2,y2,score,label
-                    arr = pred0
-                    if arr.ndim == 2 and arr.shape[1] >= 6:
-                        boxes = arr[:, 0:4]
-                        scores = arr[:, 4]
-                        labels = arr[:, 5]
-            elif hasattr(pred0, "get"):
-                boxes = pred0.get("boxes")
-                scores = pred0.get("scores")
-                labels = pred0.get("labels") or pred0.get("classes")
-            elif isinstance(pred0, torch.Tensor):
-                arr = pred0
-                if arr.ndim == 2 and arr.shape[1] >= 6:
-                    boxes = arr[:, 0:4]
-                    scores = arr[:, 4]
-                    labels = arr[:, 5]
-            detections: List[Dict[str, Any]] = []
-            if boxes is not None and scores is not None and labels is not None:
-                for bbox, score, label in zip(boxes, scores, labels):
-                    s = float(score)
-                    if s < conf:
+        elif model_id == "nanodet":
+            try:
+                print(f"Running M873.V1 (NanoDet profile) detection at resolution {image.shape[:2]}...")
+                tensor = to_tensor(image)
+                
+                # Enforce no_grad for memory efficiency
+                with torch.no_grad():
+                    outputs = model([tensor])[0]
+                    
+                boxes = outputs.get("boxes")
+                scores = outputs.get("scores")
+                labels = outputs.get("labels")
+                
+                detections: List[Dict[str, Any]] = []
+                categories = getattr(model, "categories", None)
+                
+                for i in range(boxes.shape[0]):
+                    score = float(scores[i].item())
+                    if score < conf:
                         continue
-                    class_name = str(int(label))
+                    
+                    label_idx = int(labels[i].item())
+                    class_name = str(label_idx)
+                    if categories and 0 <= label_idx < len(categories):
+                        class_name = categories[label_idx]
+                        
                     if class_filter and class_name not in class_filter:
                         continue
+                        
+                    # Scale box back to original coordinates
+                    bbox = boxes[i].cpu().numpy()
+                    bbox = (bbox / scale).tolist()
+                    
                     detections.append({
                         "class": class_name,
-                        "confidence": s,
-                        "bbox": bbox.tolist() if hasattr(bbox, "tolist") else list(bbox),
+                        "confidence": score,
+                        "bbox": bbox,
                         "shape": "rect",
                     })
-            return detections
+                return detections
+            except Exception as e:
+                print(f"NanoDet profile detection error: {str(e)}")
+                raise
 
-        raise ValueError("Unsupported backend")
+        return []
 
 # Import exporter
 from core.exporter import Exporter
@@ -358,7 +283,7 @@ exporter = Exporter()
 
 # Pydantic models for request/response
 class DetectionRequest(BaseModel):
-    model: str = "yolov8n.pt"
+    model: str = "yolo"
     confidence: float = 0.25
     class_filter: Optional[List[str]] = None
 
@@ -404,7 +329,7 @@ async def get_models():
         models = model_manager.get_available_models()
         return {
             "models": models,
-            "default": "yolo/yolov8n.pt",
+            "default": "yolo",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -412,7 +337,7 @@ async def get_models():
 @app.post("/api/detect")
 async def detect_objects(
     file: UploadFile = File(...),
-    model: str = Form("yolo/yolov8n.pt"),
+    model: str = Form("yolo"),
     confidence: float = Form(0.25),
     class_filter: Optional[str] = Form(None)
 ):
@@ -473,7 +398,7 @@ async def detect_objects(
 @app.post("/api/detect-annotated")
 async def detect_and_annotate(
     file: UploadFile = File(...),
-    model: str = Form("yolo/yolov8n.pt"),
+    model: str = Form("yolo"),
     confidence: float = Form(0.25),
     class_filter: Optional[str] = Form(None)
 ):
@@ -540,7 +465,7 @@ async def detect_and_annotate(
 @app.post("/api/detect-batch")
 async def detect_objects_batch(
     files: List[UploadFile] = File(...),
-    model: str = Form("yolo/yolov8n.pt"),
+    model: str = Form("yolo"),
     confidence: float = Form(0.25),
     class_filter: Optional[str] = Form(None)
 ):
@@ -662,7 +587,7 @@ async def detect_objects_batch(
 @app.post("/api/detect-folder")
 async def detect_objects_folder(
     files: List[UploadFile] = File(...),
-    model: str = Form("yolo/yolov8n.pt"),
+    model: str = Form("yolo"),
     confidence: float = Form(0.25),
     class_filter: Optional[str] = Form(None)
 ):

@@ -27,6 +27,8 @@ interface FolderDetectionResponse {
   }>;
   total_images: number;
   processed_count: number;
+  total_objects?: number;
+  successful_detections?: number;
 }
 
 // Utility function to generate UUID (compatible with all browsers)
@@ -113,16 +115,15 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
       .then(res => res.json())
       .then((data: ModelResponse) => {
         const formattedModels = data.models.map((m, index) => {
-          // Map YOLO models to M873.x format, others keep original name
           let displayName = m;
           let description = 'Standard';
           
-          if (m === 'yolo/yolov8n.pt') {
-            displayName = 'M873.1';
-            description = 'Fast (Nano)';
-          } else if (m === 'yolo/yolov8m.pt') {
-            displayName = 'M873.2';
-            description = 'Accurate (Medium)';
+          if (m === 'yolo') {
+            displayName = 'M873.V2';
+            description = 'Fast (YOLOv8n)';
+          } else if (m === 'nanodet') {
+            displayName = 'M873.V1';
+            description = 'Fast (NanoDet)';
           }
           
           return {
@@ -424,14 +425,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
       // Auto-annotate first image if detections available
       const firstResult = data.results[0];
       if (firstResult && !firstResult.error && firstResult.detections) {
-        const initialAnnotations = firstResult.detections!.map((det, index: number) => ({
-          id: `auto-${index}`,
-          class: det.class,
-          confidence: det.confidence,
-          bbox: det.bbox,
-          color: '#FF6B6B',
-          label: det.class,
-        }));
+        const initialAnnotations = newImageAnnotations[newImageUrls[0]] || [];
         setAnnotations(initialAnnotations);
         setHistory([[], initialAnnotations]);
         setHistoryIndex(1);
@@ -577,7 +571,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
         throw new Error(`Batch detection request failed: ${res.status} ${errorText}`);
       }
 
-      const data = await res.json() as { results: Array<{ error?: string; detections?: DetectionResponse['detections'] }> };
+      const data = await res.json() as { results: Array<{ error?: string; detections?: DetectionResponse['detections'] }>; successful_detections?: number };
       console.log('Batch detection response:', data);
 
       // Process all results and save annotations per image
