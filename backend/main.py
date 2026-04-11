@@ -271,9 +271,15 @@ app = FastAPI(title="AutoOD API", version="1.0.0")
 # CORS middleware to allow React frontend to communicate
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://autood-f9bq.onrender.com", "http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[
+        "https://autood-f9bq.onrender.com", 
+        "https://autood.onrender.com",
+        "https://auto-od.vercel.app",
+        "http://localhost:3000", 
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
