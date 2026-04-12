@@ -22,8 +22,6 @@ import sys
 # import numpy as np
 # from PIL import Image
 # from ultralytics import YOLO
-# from transformers import DetrImageProcessor, DetrForObjectDetection
-# from effdet import create_model
 
 
 
@@ -701,7 +699,7 @@ async def detect_objects_folder(
                     # For remaining images, just return filename
                     image_files.append({
                         "filename": filename,
-                        "url": null
+                        "url": None
                     })
                 
                 processed_count += 1
@@ -740,7 +738,7 @@ async def detect_objects_folder(
 @app.post("/api/detect-video")
 async def detect_objects_video(
     file: UploadFile = File(...),
-    model: str = Form("yolo/yolov8n.pt"),
+    model: str = Form("yolo"),
     confidence: float = Form(0.25),
     class_filter: Optional[str] = Form(None),
     frame_interval: int = Form(1),  # Process every N frames

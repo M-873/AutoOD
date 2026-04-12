@@ -9,11 +9,8 @@ class ModelManager:
     """Manages YOLO model loading, caching, and inference"""
     
     AVAILABLE_MODELS = {
-        "YOLOv8n (Nano - Fastest)": "yolov8n.pt",
-        "YOLOv8s (Small)": "yolov8s.pt",
-        "YOLOv11n (Nano - Latest)": "yolo11n.pt",
-        "YOLOv11s (Small - Latest)": "yolo11s.pt",
-        "YOLO-World-v2s (Zero-shot)": "yolov8s-worldv2.pt",
+        "M873.V2": "yolov8n.pt",
+        "M873.V1": "nanodet",
     }
     
     def __init__(self, models_dir: str = "data/models"):
