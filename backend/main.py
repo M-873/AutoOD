@@ -80,7 +80,9 @@ def init_nanodet():
         else:
             logger.warning(f"NanoDet repository not found at {NANODET_REPO_DIR}. Please clone it.")
     except Exception as e:
+        import traceback
         logger.error(f"Error initializing NanoDet: {e}")
+        logger.error(traceback.format_exc())
 
 @app.on_event("startup")
 async def startup_event():

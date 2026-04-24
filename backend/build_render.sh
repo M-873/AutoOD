@@ -12,13 +12,10 @@ pip install --no-cache-dir -r requirements_render.txt
 if [ ! -d "nanodet" ]; then
     echo "📥 Cloning NanoDet official repository..."
     git clone https://github.com/RangiLyu/nanodet.git
-    cd nanodet
-    # Install nanodet in editable mode so it's on path
-    pip install -e .
-    cd ..
-else
-    echo "✅ NanoDet repository already exists."
 fi
+
+echo "📦 Installing NanoDet in editable mode..."
+pip install -e ./nanodet
 
 # 3. Download Model Weights
 echo "📥 Downloading model weights..."

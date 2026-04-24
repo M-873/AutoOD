@@ -15,7 +15,7 @@ def download_weights():
 
     # 2. NanoDet-Plus M416
     nanodet_weight = "nanodet-plus-m_416_checkpoint.ckpt"
-    nanodet_url = "https://github.com/RangiLyu/nanodet/releases/download/v1.0.0-alpha/nanodet-plus-m_416_checkpoint.ckpt"
+    nanodet_url = "https://github.com/RangiLyu/nanodet/releases/download/v1.0.0-alpha-1/nanodet-plus-m_416_checkpoint.ckpt"
     
     if not os.path.exists(nanodet_weight):
         print(f"📥 Downloading NanoDet weight: {nanodet_weight}...")
