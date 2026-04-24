@@ -1,8 +1,9 @@
-import { MousePointer2, Square, Pentagon, CircleDot, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Save, Download, Wand2, Loader2 } from 'lucide-react';
+import { MousePointer2, Square, Pentagon, CircleDot, Activity, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Save, Download, Wand2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ToolType } from '@/types/annotation';
 
 interface ModelOption {
@@ -31,7 +32,7 @@ interface AnnotationToolbarProps {
   canAutoAnnotate: boolean;
   canBatchAutoAnnotate?: boolean;
   models: ModelOption[];
-  onExport: () => void;
+  onExport: (format: string) => void;
   // Navigation controls
   onPreviousImage?: () => void;
   onNextImage?: () => void;
@@ -45,6 +46,7 @@ const tools = [
   { id: 'select' as ToolType, icon: MousePointer2, label: 'Select (V)', shortcut: 'V' },
   { id: 'rectangle' as ToolType, icon: Square, label: 'Rectangle (R)', shortcut: 'R' },
   { id: 'polygon' as ToolType, icon: Pentagon, label: 'Polygon (P)', shortcut: 'P' },
+  { id: 'polyline' as ToolType, icon: Activity, label: 'Polyline (L)', shortcut: 'L' },
   { id: 'point' as ToolType, icon: CircleDot, label: 'Point (O)', shortcut: 'O' },
 ];
 
@@ -279,16 +281,27 @@ export const AnnotationToolbar = ({
 
       {/* Actions */}
       <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="toolbar" size="iconSm" onClick={onExport}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="toolbar" size="iconSm">
               <Download className="h-4 w-4" />
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p>Export Annotations</p>
-          </TooltipContent>
-        </Tooltip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onExport('JSON')}>
+              Export JSON
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport('CSV')}>
+              Export CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport('YOLO')}>
+              Export YOLO
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport('YOLO_IMAGES')}>
+              Export YOLO with images
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button size="sm" onClick={onSave}>
           <Save className="h-4 w-4 mr-2" />
           Save

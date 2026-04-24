@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, MoreVertical, Play, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, MoreVertical, Play, CheckCircle2, Clock, AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { format } from 'date-fns';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 
 interface TaskListProps {
   onTaskSelect: (taskId: string) => void;
@@ -60,6 +62,30 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
     }
   };
 
+  const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
+      if (isDemoMode) {
+        const demoTasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
+        const updatedTasks = demoTasks.filter((t: any) => t.id !== taskId);
+        localStorage.setItem('demo_tasks', JSON.stringify(updatedTasks));
+        fetchTasks();
+        toast.success("Project deleted successfully");
+        return;
+      }
+      
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) throw error;
+      
+      fetchTasks();
+      toast.success("Project deleted successfully");
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      toast.error('Failed to delete project');
+    }
+  };
+
   useEffect(() => {
     fetchTasks();
   }, []);
@@ -73,17 +99,17 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
       {/* Toolbar */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Tasks</h2>
+          <h2 className="text-xl font-semibold">Projects</h2>
           <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Create Task
+            Create Project
           </Button>
         </div>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search tasks..."
+              placeholder="Search projects..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 bg-secondary border-border"
@@ -103,18 +129,17 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <p className="text-lg mb-2">No tasks yet</p>
-            <p className="text-sm">Click "Create Task" to get started</p>
+            <p className="text-lg mb-2">No projects yet</p>
+            <p className="text-sm">Click "Create Project" to get started</p>
           </div>
         ) : (
           <table className="w-full">
             <thead className="sticky top-0 bg-card border-b border-border">
               <tr className="text-left text-sm text-muted-foreground">
                 <th className="p-4 font-medium">#</th>
-                <th className="p-4 font-medium">Task Name</th>
+                <th className="p-4 font-medium">Project Name</th>
                 <th className="p-4 font-medium">Status</th>
                 <th className="p-4 font-medium">Progress</th>
-                <th className="p-4 font-medium">Assignee</th>
                 <th className="p-4 font-medium">Updated</th>
                 <th className="p-4 font-medium w-10"></th>
               </tr>
@@ -155,16 +180,26 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
                         </span>
                       </div>
                     </td>
-                    <td className="p-4 text-muted-foreground">
-                      {task.assignee || '—'}
-                    </td>
                     <td className="p-4 text-muted-foreground text-sm">
                       {format(new Date(task.updated_at), 'MMM d, yyyy')}
                     </td>
                     <td className="p-4">
-                      <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[160px]">
+                          <DropdownMenuItem 
+                            className="text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
+                            onClick={(e) => handleDeleteTask(task.id, e as any)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                 );
@@ -176,7 +211,7 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
 
       {/* Footer */}
       <div className="p-4 border-t border-border text-sm text-muted-foreground">
-        Showing {filteredTasks.length} of {tasks.length} tasks
+        Showing {filteredTasks.length} of {tasks.length} projects
       </div>
 
       <CreateTaskDialog

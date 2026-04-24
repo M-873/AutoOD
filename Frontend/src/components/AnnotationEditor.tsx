@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import JSZip from 'jszip';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AnnotationToolbar } from './AnnotationToolbar';
@@ -513,191 +514,111 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
       return;
     }
 
-    if (labels.length === 0) {
-      toast.error('Please add labels first');
-      return;
-    }
-
     setIsAutoAnnotating(true);
-    toast.info('Running batch AI auto-annotation...');
+    toast.info('Running batch AI auto-annotation (5 images at a time)...');
+
+    const BATCH_SIZE = 5;
+    const newImageAnnotations = { ...imageAnnotations };
+    const allNewLabels: Label[] = [];
+    let totalDetections = 0;
 
     try {
-      // Convert all images to blobs with error handling
-      const blobResults = await Promise.allSettled(
-        imageUrls.map(async (url) => {
-          try {
-            const response = await fetch(url);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      for (let i = 0; i < imageUrls.length; i += BATCH_SIZE) {
+        const chunk = imageUrls.slice(i, i + BATCH_SIZE);
+        const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(imageUrls.length / BATCH_SIZE);
+        
+        toast.info(`Processing batch ${currentBatchNum} of ${totalBatches}...`);
+
+        const chunkResults = await Promise.all(
+          chunk.map(async (url) => {
+            try {
+              const response = await fetch(url);
+              if (!response.ok) throw new Error(`Fetch failed for ${url}`);
+              const blob = await response.blob();
+              
+              const formData = new FormData();
+              formData.append('file', new File([blob], 'image.jpg', { type: blob.type }));
+              formData.append('model', selectedModel);
+
+              const res = await fetch(`${API_BASE_URL}/api/detect`, {
+                method: 'POST',
+                body: formData,
+              });
+
+              if (!res.ok) throw new Error(`Detection failed for ${url}`);
+              const detections: DetectionResponse = await res.json();
+              return { url, detections, error: null };
+            } catch (err) {
+              console.error(err);
+              return { url, detections: [], error: err instanceof Error ? err.message : 'Unknown error' };
             }
-            return await response.blob();
-          } catch (error) {
-            console.error(`Failed to fetch image ${url}:`, error);
-            throw error;
-          }
-        })
-      );
-      
-      // Filter out failed fetches and get successful blobs
-      const successfulResults = blobResults.filter(result => result.status === 'fulfilled') as PromiseFulfilledResult<Blob>[];
-      const blobs = successfulResults.map(result => result.value);
-      
-      if (blobs.length === 0) {
-        throw new Error('Failed to fetch any images for batch processing');
-      }
-      
-      if (blobs.length < imageUrls.length) {
-        console.warn(`Only ${blobs.length} out of ${imageUrls.length} images were successfully fetched`);
-      }
-      
-      // Create form data with multiple files
-      const formData = new FormData();
-      blobs.forEach((blob, index) => {
-        const file = new File([blob], `image_${index}.jpg`, { type: blob.type || 'image/jpeg' });
-        formData.append('files', file);
-      });
-      formData.append('model', selectedModel);
-      formData.append('confidence', '0.25');
-      
-      console.log('Sending batch auto-annotation request with', blobs.length, 'images');
-      const res = await fetch(`${API_BASE_URL}/api/detect-batch`, {
-        method: 'POST',
-        body: formData,
-      });
+          })
+        );
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Batch detection request failed:', res.status, errorText);
-        throw new Error(`Batch detection request failed: ${res.status} ${errorText}`);
-      }
+        // Process results for this chunk
+        chunkResults.forEach((result) => {
+          if (result.error) return;
 
-      const data = await res.json() as { results: Array<{ error?: string; detections?: DetectionResponse['detections'] }>; successful_detections?: number };
-      console.log('Batch detection response:', data);
-
-      // Process all results and save annotations per image
-      const newImageAnnotations: {[imageUrl: string]: Annotation[]} = { ...imageAnnotations };
-      let totalNewAnnotations = 0;
-      const allNewLabels: Label[] = [];
-      
-      data.results.forEach((result, index) => {
-        if (result.error) {
-          console.warn(`Image ${index + 1} processing error:`, result.error);
-          return;
-        }
-
-        if (result.detections && Array.isArray(result.detections)) {
-          console.log(`Processing image ${index + 1}/${data.results.length}: ${result.detections.length} detections`);
+          const imageAnnotationsForUrl: Annotation[] = [];
           
-          const newAnnotations: Annotation[] = [];
-          const newLabels: Label[] = [];
-
-          // Helper to find label
-          const findLabel = (name: string) => {
-            const lower = name.toLowerCase();
-            return labels.find(l => l.name.toLowerCase() === lower) || 
-                   allNewLabels.find(l => l.name.toLowerCase() === lower) ||
-                   newLabels.find(l => l.name.toLowerCase() === lower);
-          }
-
-          for (const detection of result.detections) {
+          result.detections.forEach((detection) => {
             const className = detection.class;
             
-            // Validate detection data
-            if (!detection.bbox || !Array.isArray(detection.bbox) || detection.bbox.length !== 4) {
-              console.warn('Invalid bbox format:', detection.bbox);
-              continue;
-            }
-
-            let labelId = '';
-            let labelColor = '';
-
-            // Check if label exists in current state or new batch
-            const existingLabel = findLabel(className);
-
-            if (existingLabel) {
-              labelId = existingLabel.id;
-              labelColor = existingLabel.color;
-            } else {
-              // Create new label
-              labelId = generateUUID();
-              labelColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
-
-              const newLabel: Label = {
-                id: labelId,
-                name: className,
-                color: labelColor,
-              };
-              newLabels.push(newLabel);
-            }
-
-            if (labelId) {
-              try {
-                const [x1, y1, x2, y2] = detection.bbox;
-                const width = x2 - x1;
-                const height = y2 - y1;
-                
-                console.log(`Processing detection: class=${className}, bbox=[${x1}, ${y1}, ${x2}, ${y2}], width=${width}, height=${height}`);
-                
-                // Validate dimensions
-                if (width <= 0 || height <= 0) {
-                  console.warn('Invalid bbox dimensions:', detection.bbox);
-                  continue;
-                }
-
-                const newAnnotation: BoundingBox = {
-                  id: generateUUID(),
-                  type: 'rectangle',
-                  x: x1,
-                  y: y1,
-                  width: width,
-                  height: height,
-                  labelId: labelId,
-                  color: labelColor,
-                };
-                console.log(`Created annotation: id=${newAnnotation.id}, x=${x1}, y=${y1}, width=${width}, height=${height}`);
-                newAnnotations.push(newAnnotation);
-              } catch (error) {
-                console.error('Error creating annotation for detection:', detection, error);
-                continue;
-              }
-            }
-          }
-
-          // Save annotations for this specific image
-          const imageUrl = imageUrls[index];
-          if (imageUrl) {
-            newImageAnnotations[imageUrl] = newAnnotations;
-            totalNewAnnotations += newAnnotations.length;
+            // Find or create label
+            let label = labels.find(l => l.name.toLowerCase() === className.toLowerCase()) ||
+                        allNewLabels.find(l => l.name.toLowerCase() === className.toLowerCase());
             
-            // Add new labels to global collection
-            allNewLabels.push(...newLabels);
-          }
-        }
-      });
+            if (!label) {
+              label = {
+                id: generateUUID(),
+                name: className,
+                color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
+              };
+              allNewLabels.push(label);
+            }
 
-      if (totalNewAnnotations > 0) {
-        // Update image annotations state
-        setImageAnnotations(newImageAnnotations);
-        
-        // Add new labels if any
+            const [x1, y1, x2, y2] = detection.bbox;
+            const width = x2 - x1;
+            const height = y2 - y1;
+
+            if (width > 0 && height > 0) {
+              imageAnnotationsForUrl.push({
+                id: generateUUID(),
+                type: 'rectangle',
+                x: x1,
+                y: y1,
+                width: width,
+                height: height,
+                labelId: label.id,
+                color: label.color,
+              } as BoundingBox);
+              totalDetections++;
+            }
+          });
+
+          newImageAnnotations[result.url] = imageAnnotationsForUrl;
+        });
+
+        // Update state progressively after each chunk
+        setImageAnnotations({ ...newImageAnnotations });
         if (allNewLabels.length > 0) {
-          setLabels(prev => [...prev, ...allNewLabels]);
+          setLabels(prev => {
+            const uniqueNew = allNewLabels.filter(nl => !prev.some(pl => pl.name.toLowerCase() === nl.name.toLowerCase()));
+            return [...prev, ...uniqueNew];
+          });
         }
         
-        // Update current image annotations if it's one of the processed images
-        const currentAnnotations = newImageAnnotations[imageUrl || ''] || [];
-        setAnnotations(currentAnnotations);
-        setHistory([currentAnnotations]);
-        setHistoryIndex(0);
-        
-        toast.success(`Added ${totalNewAnnotations} new annotations across ${data.successful_detections || 0} images`);
-      } else {
-        toast.info('No new objects detected in the batch');
+        // If current image is in this chunk, update active annotations
+        if (chunk.includes(imageUrl || '')) {
+          setAnnotations(newImageAnnotations[imageUrl || ''] || []);
+        }
       }
 
+      toast.success(`Batch processing complete! Found ${totalDetections} objects.`);
     } catch (error) {
       console.error('Batch auto-annotation error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to auto-annotate batch');
+      toast.error('Batch processing encountered an error');
     } finally {
       setIsAutoAnnotating(false);
     }
@@ -752,11 +673,9 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
 
       const data: DetectionResponse = await res.json();
       console.log('Detection response received:', data);
-      console.log('Response has detections:', !!data?.detections);
-      console.log('Detections is array:', Array.isArray(data?.detections));
 
-      if (data?.detections && Array.isArray(data.detections)) {
-          console.log(`Processing ${data.detections.length} detections`);
+      if (data && Array.isArray(data)) {
+          console.log(`Processing ${data.length} detections`);
           
           const newAnnotations: Annotation[] = [];
           const newLabels: Label[] = [];
@@ -767,7 +686,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
             return labels.find(l => l.name.toLowerCase() === lower) || newLabels.find(l => l.name.toLowerCase() === lower);
           }
 
-          for (const detection of data.detections) {
+          for (const detection of data) {
             const className = detection.class;
             
             // Validate detection data
@@ -858,7 +777,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
     }
   }, [imageUrl, annotations, labels, selectedModel, pushToHistory, selectedLabelId]);
 
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async (formatId: string = 'JSON') => {
     if (annotations.length === 0) {
       toast.error('No annotations to export');
       return;
@@ -870,9 +789,10 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
           let bbox: [number, number, number, number] = [0, 0, 0, 0];
           if (a.type === 'rectangle') {
             bbox = [a.x, a.y, a.x + a.width, a.y + a.height];
-          } else if (a.type === 'polygon') {
-            const xs = a.points.map(p => p.x);
-            const ys = a.points.map(p => p.y);
+          } else if (a.type === 'polygon' || (a as any).type === 'polyline') {
+            const points = (a as any).points;
+            const xs = points.map((p: any) => p.x);
+            const ys = points.map((p: any) => p.y);
             bbox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
           } else if (a.type === 'point') {
             bbox = [a.x - 5, a.y - 5, a.x + 5, a.y + 5];
@@ -882,11 +802,11 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
             class: labels.find(l => l.id === a.labelId)?.name || 'unknown',
             confidence: 1.0,
             bbox: bbox,
-            shape: a.type === 'rectangle' ? 'rect' : 'poly'
+            shape: a.type === 'rectangle' ? 'rect' : ((a as any).type === 'polyline' ? 'line' : 'poly')
           };
         }),
         image_size: { width: 800, height: 600 }, // Fallback
-        formats: ['YOLO', 'CSV', 'JSON', 'COCO'],
+        formats: formatId === 'YOLO_IMAGES' ? ['YOLO'] : [formatId],
         classes: labels.map(l => l.name)
       };
 
@@ -918,10 +838,29 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
 
       // Handle ZIP file download
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      let finalBlob = blob;
+
+      if (formatId === 'YOLO_IMAGES' && imageUrl) {
+        toast.info('Packaging image with YOLO annotations...');
+        try {
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(blob);
+          
+          const imgRes = await fetch(imageUrl);
+          const imgBlob = await imgRes.blob();
+          
+          zip.file('yolo/image.jpg', imgBlob);
+          finalBlob = await zip.generateAsync({ type: 'blob' });
+        } catch (err) {
+          console.error("Failed to inject image into zip", err);
+          toast.error("Could not package image with export");
+        }
+      }
+
+      const url = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'autood_export.zip';
+      a.download = `autood_export_${formatId}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -959,6 +898,9 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
           break;
         case 'p':
           setCurrentTool('polygon');
+          break;
+        case 'l':
+          setCurrentTool('polyline');
           break;
         case 'o':
           setCurrentTool('point');
@@ -1021,7 +963,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <h2 className="font-medium text-sm">Task #{taskId}</h2>
+          <h2 className="font-medium text-sm">Project: {taskId}</h2>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="iconSm" onClick={() => setCurrentFrame(Math.max(1, currentFrame - 1))}>

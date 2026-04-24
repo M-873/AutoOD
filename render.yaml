@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install --no-cache-dir -r requirements_render.txt
+    buildCommand: bash build_render.sh
     startCommand: gunicorn main:app -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: PORT

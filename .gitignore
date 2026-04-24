@@ -55,4 +55,7 @@ backend/data/models/*
 backend/data/exports/*
 !backend/data/models/.gitkeep
 !backend/data/exports/.gitkeep
+backend/nanodet/
 *.pt
+*.ckpt
+*.yml

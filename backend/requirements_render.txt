@@ -10,4 +10,9 @@ torch==2.2.2
 torchvision==0.17.2
 scipy==1.13.1
 gunicorn==23.0.0
+pytorch-lightning
+termcolor
+tabulate
+pycocotools
+pyyaml
 --extra-index-url https://download.pytorch.org/whl/cpu

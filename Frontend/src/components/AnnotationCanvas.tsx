@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Annotation, ToolType, Point, Label, BoundingBox, Polygon, PointAnnotation } from '@/types/annotation';
 
@@ -56,6 +57,7 @@ export const AnnotationCanvas = ({
   onImageUpload,
   onBatchImageUpload,
   onVideoUpload,
+  onFolderUpload,
   onPanChange,
   onZoomIn,
   onZoomOut,
@@ -265,6 +267,30 @@ export const AnnotationCanvas = ({
           ctx.arc(x, y, 6, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+        } else if (annotation.type === 'polyline') {
+          if (annotation.points.length > 1) {
+            // Add glow effect for selected annotations
+            if (isSelected) {
+              ctx.shadowColor = color;
+              ctx.shadowBlur = 10;
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(imgX + annotation.points[0].x * zoom - 2, imgY + annotation.points[0].y * zoom - 2);
+              annotation.points.slice(1).forEach(p => {
+                ctx.lineTo(imgX + p.x * zoom - 2, imgY + p.y * zoom - 2);
+              });
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(imgX + annotation.points[0].x * zoom, imgY + annotation.points[0].y * zoom);
+            annotation.points.slice(1).forEach(p => {
+              ctx.lineTo(imgX + p.x * zoom, imgY + p.y * zoom);
+            });
+            ctx.stroke();
+          }
         }
       });
 
@@ -302,6 +328,9 @@ export const AnnotationCanvas = ({
         });
         if (currentPoint) {
           ctx.lineTo(imgX + currentPoint.x * zoom, imgY + currentPoint.y * zoom);
+        }
+        if (currentTool === 'polygon') {
+          ctx.closePath();
         }
         ctx.stroke();
 
@@ -434,7 +463,7 @@ export const AnnotationCanvas = ({
         color: getLabelColor(selectedLabelId),
       };
       onAnnotationAdd(pointAnnotation);
-    } else if (currentTool === 'polygon' && selectedLabelId) {
+    } else if ((currentTool === 'polygon' || currentTool === 'polyline') && selectedLabelId) {
       setPolygonPoints([...polygonPoints, coords]);
     }
   };
@@ -598,6 +627,19 @@ export const AnnotationCanvas = ({
         color: getLabelColor(selectedLabelId),
       };
       onAnnotationAdd(polygonAnnotation);
+      setPolygonPoints([]);
+    } else if (currentTool === 'polyline' && polygonPoints.length >= 2 && selectedLabelId) {
+      import('@/types/annotation').then(({ Polyline }: any) => {
+        // Just defining type directly as we only use the interface conceptually
+      });
+      const polylineAnnotation: any = {
+        id: generateUUID(),
+        type: 'polyline',
+        points: polygonPoints,
+        labelId: selectedLabelId,
+        color: getLabelColor(selectedLabelId),
+      };
+      onAnnotationAdd(polylineAnnotation);
       setPolygonPoints([]);
     }
   };

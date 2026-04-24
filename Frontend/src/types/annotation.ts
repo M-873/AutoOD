@@ -22,6 +22,14 @@ export interface Polygon {
   color: string;
 }
 
+export interface Polyline {
+  id: string;
+  type: 'polyline';
+  points: Point[];
+  labelId: string;
+  color: string;
+}
+
 export interface PointAnnotation {
   id: string;
   type: 'point';
@@ -31,7 +39,7 @@ export interface PointAnnotation {
   color: string;
 }
 
-export type Annotation = BoundingBox | Polygon | PointAnnotation;
+export type Annotation = BoundingBox | Polygon | PointAnnotation | Polyline;
 
 export interface Label {
   id: string;
@@ -53,7 +61,7 @@ export interface Task {
 }
 
 export interface AnnotationState {
-  currentTool: 'select' | 'rectangle' | 'polygon' | 'point';
+  currentTool: 'select' | 'rectangle' | 'polygon' | 'point' | 'polyline';
   selectedAnnotationId: string | null;
   selectedLabelId: string | null;
   annotations: Annotation[];
@@ -62,4 +70,4 @@ export interface AnnotationState {
   pan: Point;
 }
 
-export type ToolType = 'select' | 'rectangle' | 'polygon' | 'point';
+export type ToolType = 'select' | 'rectangle' | 'polygon' | 'point' | 'polyline';

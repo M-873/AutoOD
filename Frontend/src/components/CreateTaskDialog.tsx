@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Upload, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -23,8 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const taskSchema = z.object({
-  name: z.string().min(1, 'Task name is required').max(100, 'Task name must be less than 100 characters'),
-  assignee: z.string().optional(),
+  name: z.string().min(1, 'Project name is required').max(100, 'Project name must be less than 100 characters'),
 });
 
 type TaskFormData = z.infer<typeof taskSchema>;
@@ -37,49 +36,13 @@ interface CreateTaskDialogProps {
 
 export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTaskDialogProps) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskSchema),
     defaultValues: {
       name: '',
-      assignee: '',
     },
   });
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Validate image file type
-      const validExtensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'];
-      const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-      
-      if (!validExtensions.includes(fileExt)) {
-        toast.error('Please select a valid image file (JPG, JPEG, PNG, BMP, TIFF, WebP)');
-        return;
-      }
-      
-      // Validate file size (max 50MB)
-      const maxSize = 50 * 1024 * 1024; // 50MB
-      if (file.size > maxSize) {
-        toast.error('Image file too large - maximum 50MB');
-        return;
-      }
-      
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-  };
 
   const onSubmit = async (data: TaskFormData) => {
     setIsLoading(true);
@@ -90,27 +53,22 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
       if (!isDemoMode) {
         const { data: userData, error: userError } = await supabase.auth.getUser();
         if (userError || !userData.user) {
-          throw new Error('You must be logged in to create a task');
+          throw new Error('You must be logged in to create a project');
         }
         userId = userData.user.id;
       } else {
         const demoUser = localStorage.getItem('demo_user_auth');
-        if (!demoUser) throw new Error('You must be logged in to create a task');
+        if (!demoUser) throw new Error('You must be logged in to create a project');
         userId = JSON.parse(demoUser).id;
-      }
-
-      let imageUrl: string | null = null;
-      if (imagePreview) {
-        imageUrl = imagePreview;
       }
 
       if (isDemoMode) {
         const newTask = {
           id: Math.random().toString(36).substring(2, 11),
           name: data.name,
-          assignee: data.assignee || null,
+          assignee: null,
           user_id: userId,
-          image_url: imageUrl,
+          image_url: null,
           status: 'pending',
           progress: 0,
           created_at: new Date().toISOString(),
@@ -122,23 +80,21 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
       } else {
         const { error } = await supabase.from('tasks').insert({
           name: data.name,
-          assignee: data.assignee || null,
+          assignee: null,
           user_id: userId,
-          image_url: imageUrl,
+          image_url: null,
           status: 'pending',
           progress: 0,
         });
         if (error) throw error;
       }
 
-      toast.success('Task created successfully');
+      toast.success('Project created successfully');
       form.reset();
-      setImageFile(null);
-      setImagePreview(null);
       onOpenChange(false);
       onTaskCreated();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create task';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create project';
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -149,7 +105,7 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
+          <DialogTitle>Create New Project</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -158,7 +114,7 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Task Name</FormLabel>
+                  <FormLabel>Project Name</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g., Street Scene Dataset" {...field} />
                   </FormControl>
@@ -167,60 +123,13 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="assignee"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Assignee (optional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., John Doe" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Image (optional)</label>
-              {imagePreview ? (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="w-full h-40 object-cover rounded-md border border-border"
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    className="absolute top-2 right-2 h-6 w-6"
-                    onClick={removeImage}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-md cursor-pointer hover:border-primary transition-colors">
-                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                  <span className="text-sm text-muted-foreground">Click to upload image</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
-
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create Task
+                Done
               </Button>
             </div>
           </form>
