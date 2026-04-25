@@ -292,6 +292,13 @@ async def health():
         "memory_info": "Strict singleton mode active"
     }
 
+@app.post("/api/clear-cache")
+async def clear_cache():
+    """Manually trigger model unloading and garbage collection"""
+    global ACTIVE_MODEL, CURRENT_MODEL_ID
+    unload_current_model()
+    return {"message": "Memory cache cleared successfully"}
+
 # --- Mount Static Files (Frontend) ---
 if os.path.exists(DIST_DIR):
     logger.info(f"Mounting static files from {DIST_DIR}")
