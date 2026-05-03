@@ -26,7 +26,7 @@ const Landing = () => {
               <Button variant="ghost">Sign In</Button>
             </Link>
             <Link to="/auth?mode=signup">
-              <Button>Get Started</Button>
+              <Button>Sign Up</Button>
             </Link>
           </div>
         </div>
@@ -51,18 +51,26 @@ const Landing = () => {
             Create training datasets faster with AI-assisted labeling and intuitive tools.
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/auth?mode=signup">
-              <Button size="lg" className="gap-2 text-lg px-8">
-                Start Annotating Free
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
-            <Link to="/auth">
-              <Button variant="outline" size="lg" className="text-lg px-8">
-                Sign In
-              </Button>
-            </Link>
+          <div className="flex flex-col sm:flex-row gap-8 sm:gap-6 justify-center items-start mt-4">
+            <div className="flex flex-col items-center gap-2 w-full sm:w-auto">
+              <Link to="/app" className="w-full sm:w-auto">
+                <Button size="lg" className="gap-2 text-lg px-8 w-full sm:w-auto">
+                  Stay with Web
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <span className="text-xs text-muted-foreground text-center">Use the app instantly in your browser</span>
+            </div>
+            
+            <div className="flex flex-col items-center gap-2 w-full sm:w-auto">
+              <a href="https://drive.usercontent.google.com/download?id=1oGc231u-vDA2B_DnM8Mthps_VUdqn2u5&export=download" className="w-full sm:w-auto">
+                <Button variant="outline" size="lg" className="gap-2 text-lg px-8 w-full sm:w-auto">
+                  <Download className="h-5 w-5" />
+                  Download
+                </Button>
+              </a>
+              <span className="text-xs text-muted-foreground text-center max-w-[220px]">Download for better performance and offline use (Windows only)</span>
+            </div>
           </div>
         </div>
       </section>
@@ -209,12 +217,27 @@ const Landing = () => {
           <p className="text-muted-foreground mb-8 text-lg">
             Join teams using AutoOD to build training datasets faster than ever.
           </p>
-          <Link to="/auth?mode=signup">
-            <Button size="lg" className="gap-2 text-lg px-10">
-              Get Started Free
-              <ArrowRight className="h-5 w-5" />
-            </Button>
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-8 sm:gap-6 justify-center items-start mt-8">
+            <div className="flex flex-col items-center gap-2 w-full sm:w-auto">
+              <Link to="/app" className="w-full sm:w-auto">
+                <Button size="lg" className="gap-2 text-lg px-10 w-full sm:w-auto">
+                  Stay with Web
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <span className="text-xs text-muted-foreground text-center">Use the app instantly in your browser</span>
+            </div>
+            
+            <div className="flex flex-col items-center gap-2 w-full sm:w-auto">
+              <a href="https://drive.usercontent.google.com/download?id=1oGc231u-vDA2B_DnM8Mthps_VUdqn2u5&export=download" className="w-full sm:w-auto">
+                <Button variant="outline" size="lg" className="gap-2 text-lg px-10 w-full sm:w-auto">
+                  <Download className="h-5 w-5" />
+                  Download
+                </Button>
+              </a>
+              <span className="text-xs text-muted-foreground text-center max-w-[220px]">Download for better performance and offline use (Windows only)</span>
+            </div>
+          </div>
         </div>
       </section>
 

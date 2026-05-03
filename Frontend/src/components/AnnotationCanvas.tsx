@@ -116,6 +116,20 @@ export const AnnotationCanvas = ({
     return hex;
   };
 
+  const getTransform = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) return null;
+    const scaleX = canvas.width / image.width;
+    const scaleY = canvas.height / image.height;
+    const baseScale = Math.min(scaleX, scaleY);
+    const effectiveZoom = baseScale * zoom;
+    const imgWidth = image.width * effectiveZoom;
+    const imgHeight = image.height * effectiveZoom;
+    const imgX = (canvas.width - imgWidth) / 2 + pan.x;
+    const imgY = (canvas.height - imgHeight) / 2 + pan.y;
+    return { effectiveZoom, imgWidth, imgHeight, imgX, imgY, canvas };
+  }, [image, zoom, pan]);
+
   // Load image
   useEffect(() => {
     if (imageUrl) {
@@ -169,10 +183,10 @@ export const AnnotationCanvas = ({
     }
 
     if (image) {
-      const imgWidth = image.width * zoom;
-      const imgHeight = image.height * zoom;
-      const imgX = (canvas.width - imgWidth) / 2 + pan.x;
-      const imgY = (canvas.height - imgHeight) / 2 + pan.y;
+      const transform = getTransform();
+      if (!transform) return;
+      const { effectiveZoom, imgWidth, imgHeight, imgX, imgY } = transform;
+      const zoom = effectiveZoom; // Shadow outer zoom to automatically scale annotations
 
       ctx.drawImage(image, imgX, imgY, imgWidth, imgHeight);
 
@@ -343,7 +357,7 @@ export const AnnotationCanvas = ({
         });
       }
     }
-  }, [image, annotations, zoom, pan, currentTool, isDrawing, startPoint, currentPoint, polygonPoints, selectedAnnotationId, selectedLabelId, getLabelColor, labelOpacity]);
+  }, [image, annotations, zoom, pan, currentTool, isDrawing, startPoint, currentPoint, polygonPoints, selectedAnnotationId, selectedLabelId, getLabelColor, labelOpacity, getTransform]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -378,21 +392,19 @@ export const AnnotationCanvas = ({
   }, [draw]);
 
   const getImageCoordinates = (e: React.MouseEvent): Point | null => {
-    const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container || !image) return null;
+    if (!container || !image) return null;
+    
+    const transform = getTransform();
+    if (!transform) return null;
+    const { canvas, effectiveZoom, imgX, imgY } = transform;
 
     const rect = canvas.getBoundingClientRect();
     const canvasX = e.clientX - rect.left;
     const canvasY = e.clientY - rect.top;
 
-    const imgWidth = image.width * zoom;
-    const imgHeight = image.height * zoom;
-    const imgX = (canvas.width - imgWidth) / 2 + pan.x;
-    const imgY = (canvas.height - imgHeight) / 2 + pan.y;
-
-    const x = (canvasX - imgX) / zoom;
-    const y = (canvasY - imgY) / zoom;
+    const x = (canvasX - imgX) / effectiveZoom;
+    const y = (canvasY - imgY) / effectiveZoom;
 
     if (x < 0 || x > image.width || y < 0 || y > image.height) return null;
 
@@ -421,16 +433,14 @@ export const AnnotationCanvas = ({
 
       if (clicked && clicked.type === 'rectangle') {
         // Check if clicking on a resize handle
-        const canvas = canvasRef.current;
         const container = containerRef.current;
-        if (!canvas || !container || !image) return;
+        if (!container || !image) return;
 
-        const imgWidth = image.width * zoom;
-        const imgHeight = image.height * zoom;
-        const imgX = (canvas.width - imgWidth) / 2 + pan.x;
-        const imgY = (canvas.height - imgHeight) / 2 + pan.y;
+        const transform = getTransform();
+        if (!transform) return;
+        const { canvas, effectiveZoom, imgX, imgY } = transform;
 
-        const handle = getResizeHandleAt(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top, clicked, imgX, imgY, zoom);
+        const handle = getResizeHandleAt(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top, clicked, imgX, imgY, effectiveZoom);
         
         if (handle) {
           // Start resizing
@@ -488,14 +498,13 @@ export const AnnotationCanvas = ({
 
       const selectedAnnotation = annotations.find(a => a.id === selectedAnnotationId);
       if (selectedAnnotation && selectedAnnotation.type === 'rectangle') {
-        const imgWidth = image.width * zoom;
-        const imgHeight = image.height * zoom;
-        const imgX = (canvas.width - imgWidth) / 2 + pan.x;
-        const imgY = (canvas.height - imgHeight) / 2 + pan.y;
+        const transform = getTransform();
+        if (!transform) return;
+        const { canvas, effectiveZoom, imgX, imgY } = transform;
 
         const mouseX = e.clientX - canvas.getBoundingClientRect().left;
         const mouseY = e.clientY - canvas.getBoundingClientRect().top;
-        const handle = getResizeHandleAt(mouseX, mouseY, selectedAnnotation, imgX, imgY, zoom);
+        const handle = getResizeHandleAt(mouseX, mouseY, selectedAnnotation, imgX, imgY, effectiveZoom);
         
         if (handle) {
           container.style.cursor = handle.includes('nw') || handle.includes('se') ? 'nwse-resize' : 'nesw-resize';
