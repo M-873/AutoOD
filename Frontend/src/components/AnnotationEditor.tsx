@@ -663,8 +663,10 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
       formData.append('file', file);
       formData.append('model', selectedModel);
       formData.append('confidence', '0.25');
+      // Always send an empty array for now or the relevant labels
+      formData.append('class_filter', JSON.stringify([]));
 
-      console.log('Sending auto-annotation request with model:', selectedModel);
+      console.log(`Sending auto-annotation request to: ${API_BASE_URL}/api/detect with model:`, selectedModel);
       const res = await fetch(`${API_BASE_URL}/api/detect`, {
         method: 'POST',
         body: formData,
