@@ -11,7 +11,7 @@ services:
       - key: PORT
         value: '10000'
       - key: PYTHON_VERSION
-        value: 3.9.21
+        value: 3.9.0
       - key: PIP_NO_CACHE_DIR
         value: '1'
       - key: TORCH_HOME
