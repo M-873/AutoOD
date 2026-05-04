@@ -116,8 +116,8 @@ def load_nanodet():
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to load NanoDet: {str(e)}")
 
-def run_yolov8n(image: np.ndarray, model_instance) -> List[Dict[str, Any]]:
-    results = model_instance.predict(image, conf=0.25, verbose=False)[0]
+def run_yolov8n(image: np.ndarray, model_instance, confidence: float = 0.25) -> List[Dict[str, Any]]:
+    results = model_instance.predict(image, conf=confidence, verbose=False)[0]
     detections = []
     
     for box in results.boxes:
@@ -134,7 +134,7 @@ def run_yolov8n(image: np.ndarray, model_instance) -> List[Dict[str, Any]]:
     
     return detections
 
-def run_nanodet(image: np.ndarray, model_instance) -> List[Dict[str, Any]]:
+def run_nanodet(image: np.ndarray, model_instance, confidence: float = 0.25) -> List[Dict[str, Any]]:
     # NanoDet inference
     meta, res_list = model_instance.inference(image)
     res = res_list[0] if isinstance(res_list, (list, tuple)) and len(res_list) > 0 else res_list
@@ -152,7 +152,7 @@ def run_nanodet(image: np.ndarray, model_instance) -> List[Dict[str, Any]]:
         for box in boxes:
             if len(box) < 5: continue
             score = float(box[4])
-            if score < 0.25: continue
+            if score < confidence: continue
             
             x1, y1, x2, y2 = box[:4]
             class_name = class_names[class_id]
@@ -176,10 +176,12 @@ async def get_models():
 @app.post("/api/detect")
 async def detect(
     file: UploadFile = File(...),
-    model: str = Form(...)
+    model: str = Form(...),
+    confidence: float = Form(0.25),
+    class_filter: str = Form("[]")
 ):
     """Unified detection endpoint with strict singleton memory management"""
-    logger.info(f"Detection request - Model: {model}")
+    logger.info(f"Detection request - Model: {model} - Conf: {confidence} - Filter: {class_filter}")
     
     model_mapping = {
         "M873.V1": "yolov8n",
@@ -202,12 +204,21 @@ async def detect(
 
         if target_id == "yolov8n":
             model_instance = load_yolo()
-            detections = run_yolov8n(img, model_instance)
+            detections = run_yolov8n(img, model_instance, confidence)
         else:
             model_instance = load_nanodet()
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            detections = run_nanodet(img_rgb, model_instance)
+            detections = run_nanodet(img_rgb, model_instance, confidence)
         
+        # Apply class filter if provided
+        try:
+            filter_list = json.loads(class_filter)
+            if filter_list and isinstance(filter_list, list) and len(filter_list) > 0:
+                logger.info(f"Filtering results by: {filter_list}")
+                detections = [d for d in detections if d["class"] in filter_list]
+        except Exception as e:
+            logger.warning(f"Failed to parse class_filter: {e}")
+            
         return detections
 
     except Exception as e:
