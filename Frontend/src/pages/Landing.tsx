@@ -174,7 +174,7 @@ const Landing = () => {
               <ul className="space-y-4">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
-                  <span>Multiple AI models: <a href="https://m-873.github.io/M873" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">M873</a>.1, <a href="https://m-873.github.io/M873" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">M873</a>.2 – <a href="https://m-873.github.io/M873" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">M873</a>.10</span>
+                  <span>Multiple AI models: M873.1, M873.2 – M873.10</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
