@@ -76,6 +76,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
   const [currentFrame, setCurrentFrame] = useState(1);
   const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState<{ id: string, name: string, description?: string }[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isAutoAnnotating, setIsAutoAnnotating] = useState(false);
   const totalFrames = 150;
 
@@ -112,6 +113,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
 
   // Fetch available models from backend
   useEffect(() => {
+    setIsLoadingModels(true);
     fetch(`${API_BASE_URL}/api/models`)
       .then(res => res.json())
       .then((data: ModelResponse) => {
@@ -144,6 +146,9 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
       .catch(err => {
         console.error("Failed to fetch models", err);
         toast.error("Failed to connect to detection backend");
+      })
+      .finally(() => {
+        setIsLoadingModels(false);
       });
   }, []);
 
@@ -999,6 +1004,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
         canAutoAnnotate={!!imageUrl}
         canBatchAutoAnnotate={imageUrls.length > 1}
         models={availableModels}
+        isLoadingModels={isLoadingModels}
         onExport={handleExport}
         // Navigation controls
         onPreviousImage={handlePreviousImage}

@@ -32,6 +32,7 @@ interface AnnotationToolbarProps {
   canAutoAnnotate: boolean;
   canBatchAutoAnnotate?: boolean;
   models: ModelOption[];
+  isLoadingModels?: boolean;
   onExport: (format: string) => void;
   // Navigation controls
   onPreviousImage?: () => void;
@@ -70,6 +71,7 @@ export const AnnotationToolbar = ({
   canAutoAnnotate,
   canBatchAutoAnnotate,
   models,
+  isLoadingModels,
   onExport,
   onPreviousImage,
   onNextImage,
@@ -173,19 +175,26 @@ export const AnnotationToolbar = ({
 
       {/* AI Auto-Annotation */}
       <div className="flex items-center gap-2">
-        <Select value={selectedModel} onValueChange={onModelChange}>
+        <Select value={selectedModel} onValueChange={onModelChange} disabled={isLoadingModels}>
           <SelectTrigger className="w-[180px] h-8 bg-secondary border-border text-sm">
-            <SelectValue placeholder="Select model" />
+            <SelectValue placeholder={isLoadingModels ? "Loading..." : "Select model"} />
           </SelectTrigger>
           <SelectContent>
-            {models.map((model) => (
-              <SelectItem key={model.id} value={model.id}>
-                <div className="flex flex-col">
-                  <span>{model.name}</span>
-                  <span className="text-xs text-muted-foreground">{model.description}</span>
-                </div>
-              </SelectItem>
-            ))}
+            {isLoadingModels ? (
+              <div className="flex items-center justify-center py-2 gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading models...</span>
+              </div>
+            ) : (
+              models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  <div className="flex flex-col">
+                    <span>{model.name}</span>
+                    <span className="text-xs text-muted-foreground">{model.description}</span>
+                  </div>
+                </SelectItem>
+              ))
+            )}
           </SelectContent>
         </Select>
 
