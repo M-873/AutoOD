@@ -1,6 +1,7 @@
 import { User, HelpCircle, Bell, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
 
 import { HamburgerMenu } from '@/components/HamburgerMenu';
 const Logo = () => (
@@ -54,6 +55,15 @@ export const Header = ({
           onHomeClick={handleHomeClick}
         />
         <Logo />
+        <Separator orientation="vertical" className="h-6" />
+        <a 
+          href="https://m-873.github.io/M873" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-xs text-muted-foreground hover:text-primary transition-colors font-medium"
+        >
+          Powered by M873
+        </a>
       </div>
 
       <div className="flex items-center gap-2">
