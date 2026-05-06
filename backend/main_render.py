@@ -77,7 +77,8 @@ async def startup_event():
     await init_db()
     
     # Start Scheduler (Daily at 00:00)
-    async_scheduler.add_job(lambda: torch.cuda.empty_cache(), 'interval', hours=1) # Periodic memory clear
+    if torch.cuda.is_available():
+        async_scheduler.add_job(lambda: torch.cuda.empty_cache(), 'interval', hours=1) # Periodic memory clear
     async_scheduler.add_job(daily_cleanup_job, 'cron', hour=0, minute=0)
     async_scheduler.start()
     logger.info("Background scheduler started.")
