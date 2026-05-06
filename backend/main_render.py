@@ -14,6 +14,14 @@ from ultralytics import YOLO
 import json
 import io
 from PIL import Image
+from datetime import datetime
+from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from core.database import init_db, save_annotation, get_expired_records, get_collection
+from core.storage import upload_image, delete_image
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -41,6 +49,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Scheduler
+async_scheduler = AsyncIOScheduler()
+
+async def daily_cleanup_job():
+    logger.info("Starting scheduled cleanup job...")
+    try:
+        expired_records = await get_expired_records(days=7)
+        deleted_count = 0
+        for record in expired_records:
+            public_id = record.get("public_id")
+            if public_id:
+                if delete_image(public_id):
+                    # After successful Cloudinary deletion, remove from MongoDB
+                    coll = get_collection()
+                    if coll is not None:
+                        await coll.delete_one({"_id": record["_id"]})
+                        deleted_count += 1
+        logger.info(f"Scheduled cleanup finished. Deleted {deleted_count} records and images.")
+    except Exception as e:
+        logger.error(f"Error in daily cleanup job: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    # Initialize Database
+    await init_db()
+    
+    # Start Scheduler (Daily at 00:00)
+    async_scheduler.add_job(lambda: torch.cuda.empty_cache(), 'interval', hours=1) # Periodic memory clear
+    async_scheduler.add_job(daily_cleanup_job, 'cron', hour=0, minute=0)
+    async_scheduler.start()
+    logger.info("Background scheduler started.")
 
 # Global variables for the SINGLETON model
 CURRENT_MODEL_ID = None
@@ -222,6 +262,31 @@ async def detect(
         except Exception as e:
             logger.warning(f"Failed to parse class_filter: {e}")
             
+        # --- NEW: MongoDB & Cloudinary Integration ---
+        try:
+            # Prepare image for Cloudinary
+            _, buffer = cv2.imencode('.jpg', img)
+            img_bytes = buffer.tobytes()
+            
+            # Upload to Cloudinary
+            storage_result = upload_image(img_bytes)
+            if storage_result:
+                # Save metadata to MongoDB
+                annotation_record = {
+                    "model": model,
+                    "confidence_threshold": confidence,
+                    "detections": detections,
+                    "image_url": storage_result["secure_url"],
+                    "public_id": storage_result["public_id"],
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                await save_annotation(annotation_record)
+                logger.info(f"Record saved to MongoDB. Cloudinary URL: {storage_result['secure_url']}")
+        except Exception as e:
+            logger.error(f"Failed to save record to MongoDB/Cloudinary: {e}")
+            # We don't raise HTTPException here to ensure zero breaking changes for the user
+            # The system remains functional even if DB/Storage fails.
+            
         return detections
 
     except Exception as e:
@@ -272,6 +337,26 @@ async def detect_folder(
             })
             processed_count += 1
             total_objects += len(detections)
+            
+            # --- NEW: MongoDB & Cloudinary Integration for Batch ---
+            try:
+                _, buffer = cv2.imencode('.jpg', img)
+                img_bytes = buffer.tobytes()
+                storage_result = upload_image(img_bytes)
+                if storage_result:
+                    annotation_record = {
+                        "filename": file.filename,
+                        "model": model,
+                        "confidence_threshold": confidence,
+                        "detections": detections,
+                        "image_url": storage_result["secure_url"],
+                        "public_id": storage_result["public_id"],
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    await save_annotation(annotation_record)
+            except Exception as e:
+                logger.error(f"Failed to save batch record: {e}")
+                
         except Exception as e:
             results.append({"filename": file.filename, "error": str(e)})
 
@@ -336,6 +421,12 @@ else:
     @app.get("/")
     async def root():
         return {"message": "AutoOD API is running. Frontend dist not found."}
+
+@app.post("/api/cleanup-expired")
+async def trigger_cleanup_expired():
+    """Manually trigger the cleanup of expired records and images (useful for external cron services)"""
+    await daily_cleanup_job()
+    return {"message": "Cleanup job for expired records triggered successfully"}
 
 if __name__ == "__main__":
     import uvicorn
