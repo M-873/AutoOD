@@ -66,7 +66,8 @@ def delete_image(public_id):
     
     try:
         result = cloudinary.uploader.destroy(public_id)
-        return result.get("result") == "ok"
+        # We consider "ok" or "not found" as successful for the purpose of database cleanup
+        return result.get("result") in ["ok", "not found"]
     except Exception as e:
         logger.error(f"Cloudinary deletion failed for {public_id}: {e}")
         return False

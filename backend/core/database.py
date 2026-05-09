@@ -22,10 +22,10 @@ async def init_db():
         db = client[DB_NAME]
         collection = db[COLLECTION_NAME]
         
-        # Create TTL index on createdAt field (8 days = 691200 seconds)
-        # We use 8 days to allow our daily cron job (running at 7 days) to delete Cloudinary images first.
-        await collection.create_index("createdAt", expireAfterSeconds=691200)
-        logger.info("MongoDB initialized with 7-day TTL index.")
+        # Create TTL index on createdAt field (30 days = 2592000 seconds)
+        # We use a longer TTL to ensure our daily cron job has plenty of time to delete Cloudinary images first.
+        await collection.create_index("createdAt", expireAfterSeconds=2592000)
+        logger.info("MongoDB initialized with 30-day TTL index.")
         return True
     except Exception as e:
         logger.error(f"Failed to initialize MongoDB: {e}")

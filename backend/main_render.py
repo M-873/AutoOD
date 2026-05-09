@@ -1,5 +1,10 @@
 import os
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables early for all modules
+load_dotenv()
+
 import logging
 import gc
 import torch
@@ -15,13 +20,9 @@ import json
 import io
 from PIL import Image
 from datetime import datetime
-from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core.database import init_db, save_annotation, get_expired_records, get_collection
 from core.storage import upload_image, delete_image
-
-# Load environment variables
-load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,16 +59,20 @@ async def daily_cleanup_job():
     try:
         expired_records = await get_expired_records(days=7)
         deleted_count = 0
+        coll = get_collection()
+        
         for record in expired_records:
             public_id = record.get("public_id")
+            image_deleted = True
+            
             if public_id:
-                if delete_image(public_id):
-                    # After successful Cloudinary deletion, remove from MongoDB
-                    coll = get_collection()
-                    if coll is not None:
-                        await coll.delete_one({"_id": record["_id"]})
-                        deleted_count += 1
-        logger.info(f"Scheduled cleanup finished. Deleted {deleted_count} records and images.")
+                image_deleted = delete_image(public_id)
+            
+            if image_deleted and coll is not None:
+                await coll.delete_one({"_id": record["_id"]})
+                deleted_count += 1
+                
+        logger.info(f"Scheduled cleanup finished. Deleted {deleted_count} records (and their images if applicable).")
     except Exception as e:
         logger.error(f"Error in daily cleanup job: {e}")
 

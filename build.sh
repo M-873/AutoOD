@@ -13,20 +13,20 @@ if [ ! -d "backend/nanodet" ]; then
 fi
 pip install -e ./backend/nanodet
 
-# # 3. Build Frontend
-# echo "🏗️ Building Frontend..."
-# cd Frontend
-# npm install --no-audit --no-fund
-# npm run build
-# cd ..
+# 3. Build Frontend
+echo "🏗️ Building Frontend..."
+cd Frontend
+npm install --no-audit --no-fund
+npm run build
+cd ..
 
-# # 3. Move Assets
-# echo "📂 Moving build assets to backend..."
-# mkdir -p backend/dist
-# rm -rf backend/dist/*
-# cp -r Frontend/dist/. backend/dist/
+# 4. Move Assets
+echo "📂 Moving build assets to backend..."
+mkdir -p backend/dist
+rm -rf backend/dist/*
+cp -r Frontend/dist/. backend/dist/
 
-# 4. Download Model Weights
+# 5. Download Model Weights
 echo "📥 Downloading model weights..."
 python backend/download_weights.py
 

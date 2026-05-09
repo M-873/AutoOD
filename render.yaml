@@ -16,3 +16,11 @@ services:
         value: '1'
       - key: TORCH_HOME
         value: /tmp/torch
+      - key: MONGODB_URI
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dqt6jvhoe
+      - key: CLOUDINARY_API_KEY
+        value: '215131412821171'
+      - key: CLOUDINARY_API_SECRET
+        sync: false
