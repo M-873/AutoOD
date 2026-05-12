@@ -23,7 +23,7 @@ from PIL import Image
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core.database import init_db, save_annotation, get_expired_records, get_collection
-from core.storage import upload_image, delete_image
+from core.storage import upload_file, delete_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -292,7 +292,7 @@ async def detect(
             img_bytes = buffer.tobytes()
             
             # Upload to Cloudinary (Run in thread to avoid blocking)
-            storage_result = await asyncio.to_thread(upload_image, img_bytes)
+            storage_result = await asyncio.to_thread(upload_file, img_bytes, resource_type="image")
             if storage_result:
                 # Save metadata to MongoDB
                 annotation_record = {
@@ -366,7 +366,7 @@ async def detect_folder(
             try:
                 _, buffer = cv2.imencode('.jpg', img)
                 img_bytes = buffer.tobytes()
-                storage_result = await asyncio.to_thread(upload_image, img_bytes)
+                storage_result = await asyncio.to_thread(upload_file, img_bytes, resource_type="image")
                 if storage_result:
                     annotation_record = {
                         "filename": file.filename,
