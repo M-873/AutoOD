@@ -9,7 +9,7 @@ pip install --no-cache-dir -r backend/requirements_render.txt
 # 2. Setup NanoDet
 echo "📥 Setting up NanoDet..."
 if [ ! -d "backend/nanodet" ]; then
-    git clone https://github.com/RangiLyu/nanodet.git backend/nanodet
+    git clone --depth 1 https://github.com/RangiLyu/nanodet.git backend/nanodet
 fi
 pip install -e ./backend/nanodet
 
