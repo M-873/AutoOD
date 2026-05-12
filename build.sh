@@ -13,12 +13,10 @@ if [ ! -d "backend/nanodet" ]; then
 fi
 pip install -e ./backend/nanodet
 
-# 3. Build Frontend
-echo "🏗️ Building Frontend..."
-cd Frontend
-npm install --no-audit --no-fund
-npm run build
-cd ..
+# 3. Build Frontend (PRE-BUILT IN REPO)
+echo "🏗️ Using pre-built frontend from backend/dist..."
+# We skip 'npm install' and 'npm run build' on Render to save memory and time.
+# The 'backend/dist' folder is now managed locally and committed to Git.
 
 # 4. Move Assets
 echo "📂 Moving build assets to backend..."
