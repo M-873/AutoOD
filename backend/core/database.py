@@ -24,7 +24,7 @@ async def init_db():
         
         # Create TTL index on createdAt field (30 days = 2592000 seconds)
         # We use a longer TTL to ensure our daily cron job has plenty of time to delete Cloudinary images first.
-        await collection.create_index("createdAt", expireAfterSeconds=2592000)
+        await collection.create_index("createdAt", expireAfterSeconds=604800)
         logger.info("MongoDB initialized with 30-day TTL index.")
         return True
     except Exception as e:

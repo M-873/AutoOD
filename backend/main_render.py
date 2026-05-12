@@ -57,22 +57,34 @@ async_scheduler = AsyncIOScheduler()
 async def daily_cleanup_job():
     logger.info("Starting scheduled cleanup job...")
     try:
+        # We target records older than 7 days
         expired_records = await get_expired_records(days=7)
         deleted_count = 0
         coll = get_collection()
+        
+        if not expired_records:
+            logger.info("No expired records found to clean up.")
+            return
+
+        logger.info(f"Found {len(expired_records)} expired records. Processing...")
         
         for record in expired_records:
             public_id = record.get("public_id")
             image_deleted = True
             
             if public_id:
-                image_deleted = delete_image(public_id)
+                # Cloudinary delete is synchronous, run in thread to avoid blocking the event loop
+                image_deleted = await asyncio.to_thread(delete_image, public_id)
+                if image_deleted:
+                    logger.info(f"Deleted image from Cloudinary: {public_id}")
+                else:
+                    logger.warning(f"Failed to delete image from Cloudinary: {public_id}")
             
             if image_deleted and coll is not None:
                 await coll.delete_one({"_id": record["_id"]})
                 deleted_count += 1
                 
-        logger.info(f"Scheduled cleanup finished. Deleted {deleted_count} records (and their images if applicable).")
+        logger.info(f"Scheduled cleanup finished. Successfully deleted {deleted_count} database records.")
     except Exception as e:
         logger.error(f"Error in daily cleanup job: {e}")
 
@@ -274,8 +286,8 @@ async def detect(
             _, buffer = cv2.imencode('.jpg', img)
             img_bytes = buffer.tobytes()
             
-            # Upload to Cloudinary
-            storage_result = upload_image(img_bytes)
+            # Upload to Cloudinary (Run in thread to avoid blocking)
+            storage_result = await asyncio.to_thread(upload_image, img_bytes)
             if storage_result:
                 # Save metadata to MongoDB
                 annotation_record = {
@@ -284,7 +296,8 @@ async def detect(
                     "detections": detections,
                     "image_url": storage_result["secure_url"],
                     "public_id": storage_result["public_id"],
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "createdAt": datetime.utcnow() # Ensure field matches TTL index
                 }
                 await save_annotation(annotation_record)
                 logger.info(f"Record saved to MongoDB. Cloudinary URL: {storage_result['secure_url']}")
@@ -348,7 +361,7 @@ async def detect_folder(
             try:
                 _, buffer = cv2.imencode('.jpg', img)
                 img_bytes = buffer.tobytes()
-                storage_result = upload_image(img_bytes)
+                storage_result = await asyncio.to_thread(upload_image, img_bytes)
                 if storage_result:
                     annotation_record = {
                         "filename": file.filename,
@@ -357,7 +370,8 @@ async def detect_folder(
                         "detections": detections,
                         "image_url": storage_result["secure_url"],
                         "public_id": storage_result["public_id"],
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "createdAt": datetime.utcnow()
                     }
                     await save_annotation(annotation_record)
             except Exception as e:
