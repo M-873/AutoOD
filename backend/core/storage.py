@@ -51,12 +51,15 @@ def upload_image(image_bytes, filename=None):
         }
         
         result = cloudinary.uploader.upload(compressed_bytes, **options)
+        logger.info(f"Successfully uploaded image to Cloudinary. Public ID: {result.get('public_id')}")
         return {
             "secure_url": result.get("secure_url"),
             "public_id": result.get("public_id")
         }
     except Exception as e:
         logger.error(f"Cloudinary upload/compression failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
 def delete_image(public_id):
@@ -66,8 +69,13 @@ def delete_image(public_id):
     
     try:
         result = cloudinary.uploader.destroy(public_id)
-        # We consider "ok" or "not found" as successful for the purpose of database cleanup
-        return result.get("result") in ["ok", "not found"]
+        status = result.get("result")
+        if status in ["ok", "not found"]:
+            logger.info(f"Successfully deleted/confirmed absence of image: {public_id} (Status: {status})")
+            return True
+        else:
+            logger.warning(f"Unexpected Cloudinary deletion result for {public_id}: {status}")
+            return False
     except Exception as e:
         logger.error(f"Cloudinary deletion failed for {public_id}: {e}")
         return False

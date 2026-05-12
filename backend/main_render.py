@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from dotenv import load_dotenv
 
 # Load environment variables early for all modules
@@ -91,7 +92,11 @@ async def daily_cleanup_job():
 @app.on_event("startup")
 async def startup_event():
     # Initialize Database
-    await init_db()
+    db_success = await init_db()
+    if not db_success:
+        logger.error("Failed to initialize database on startup. Some features may be unavailable.")
+    else:
+        logger.info("Database initialized successfully on startup.")
     
     # Start Scheduler (Daily at 00:00)
     if torch.cuda.is_available():
