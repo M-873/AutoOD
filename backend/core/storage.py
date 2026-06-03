@@ -27,34 +27,65 @@ else:
 def upload_image(image_bytes, filename=None):
     """Upload compressed image to Cloudinary to save bandwidth/storage on free tier"""
     try:
-        # Compress image before upload
         from PIL import Image
         import io
+        import cloudinary.utils
         
         img = Image.open(io.BytesIO(image_bytes))
-        # Convert to RGB if necessary (Cloudinary handles it but smaller before upload is better)
+        orig_format = img.format if img.format else "JPEG"
+        
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
+            orig_format = "JPEG"
         
-        # Resize if too large (e.g., max 1280px width/height for small project)
-        max_size = 1280
+        # Resize if width or height exceeds 1024px
+        max_size = 1024
+        orig_width, orig_height = img.size
+        width, height = orig_width, orig_height
         if max(img.size) > max_size:
             img.thumbnail((max_size, max_size), Image.LANCZOS)
+            width, height = img.size
             
         output = io.BytesIO()
-        img.save(output, format="JPEG", quality=85, optimize=True)
+        img.save(output, format=orig_format, quality=80, optimize=True)
         compressed_bytes = output.getvalue()
+        file_size = len(compressed_bytes)
 
         options = {
-            "folder": "autood/uploads",
-            "resource_type": "image"
+            "folder": "autood",
+            "resource_type": "image",
+            "quality": "auto:low",
+            "fetch_format": "auto"
         }
         
         result = cloudinary.uploader.upload(compressed_bytes, **options)
-        logger.info(f"Successfully uploaded image to Cloudinary. Public ID: {result.get('public_id')}")
+        public_id = result.get("public_id")
+        
+        # Generate the specific imageUrl and thumbnailUrl with transformations
+        image_url, _ = cloudinary.utils.cloudinary_url(
+            public_id,
+            transformation=[
+                {"width": 1024, "crop": "limit", "quality": "auto:low", "fetch_format": "auto"}
+            ],
+            secure=True
+        )
+        
+        thumbnail_url, _ = cloudinary.utils.cloudinary_url(
+            public_id,
+            transformation=[
+                {"width": 300, "crop": "limit", "quality": "auto:low", "fetch_format": "auto"}
+            ],
+            secure=True
+        )
+        
+        logger.info(f"Successfully uploaded image to Cloudinary. Public ID: {public_id}")
         return {
-            "secure_url": result.get("secure_url"),
-            "public_id": result.get("public_id")
+            "secure_url": image_url,
+            "thumbnail_url": thumbnail_url,
+            "public_id": public_id,
+            "width": width,
+            "height": height,
+            "fileSize": file_size
         }
     except Exception as e:
         logger.error(f"Cloudinary upload/compression failed: {e}")
@@ -79,3 +110,4 @@ def delete_image(public_id):
     except Exception as e:
         logger.error(f"Cloudinary deletion failed for {public_id}: {e}")
         return False
+

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Home, Settings, Menu } from 'lucide-react';
+import { Home, Settings, Menu, Image } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { SettingsSheet } from '@/components/SettingsSheet';
@@ -20,6 +21,7 @@ export const HamburgerMenu = ({
   onHomeClick
 }: HamburgerMenuProps) => {
   const [open, setOpen] = React.useState(false);
+  const navigate = useNavigate();
 
   const handleHomeClick = () => {
     onHomeClick?.();
@@ -46,13 +48,25 @@ export const HamburgerMenu = ({
             <Home className="h-4 w-4 mr-2" />
             Home
           </Button>
+
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start" 
+            onClick={() => {
+              navigate('/gallery');
+              setOpen(false);
+            }}
+          >
+            <Image className="h-4 w-4 mr-2" />
+            Image Gallery
+          </Button>
           
           <SettingsSheet 
             brightness={brightness}
             onBrightnessChange={onBrightnessChange}
             labelOpacity={labelOpacity}
             onLabelOpacityChange={onLabelOpacityChange}
-            triggerButton={
+            triggerButton = {
               <Button variant="ghost" className="w-full justify-start">
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
