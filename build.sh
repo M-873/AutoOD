@@ -18,12 +18,6 @@ echo "🏗️ Using pre-built frontend from backend/dist..."
 # We skip 'npm install' and 'npm run build' on Render to save memory and time.
 # The 'backend/dist' folder is now managed locally and committed to Git.
 
-# 4. Move Assets
-echo "📂 Moving build assets to backend..."
-mkdir -p backend/dist
-rm -rf backend/dist/*
-cp -r Frontend/dist/. backend/dist/
-
 # 5. Download Model Weights
 echo "📥 Downloading model weights..."
 python backend/download_weights.py
