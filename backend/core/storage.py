@@ -31,25 +31,25 @@ def upload_image(image_bytes, filename=None):
         import io
         import cloudinary.utils
         
-        img = Image.open(io.BytesIO(image_bytes))
-        orig_format = img.format if img.format else "JPEG"
-        
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-            orig_format = "JPEG"
-        
-        # Resize if width or height exceeds 1024px
-        max_size = 1024
-        orig_width, orig_height = img.size
-        width, height = orig_width, orig_height
-        if max(img.size) > max_size:
-            img.thumbnail((max_size, max_size), Image.LANCZOS)
-            width, height = img.size
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            orig_format = img.format if img.format else "JPEG"
             
-        output = io.BytesIO()
-        img.save(output, format=orig_format, quality=80, optimize=True)
-        compressed_bytes = output.getvalue()
-        file_size = len(compressed_bytes)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+                orig_format = "JPEG"
+            
+            # Resize if width or height exceeds 1024px
+            max_size = 1024
+            orig_width, orig_height = img.size
+            width, height = orig_width, orig_height
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.LANCZOS)
+                width, height = img.size
+                
+            output = io.BytesIO()
+            img.save(output, format=orig_format, quality=80, optimize=True)
+            compressed_bytes = output.getvalue()
+            file_size = len(compressed_bytes)
 
         options = {
             "folder": "autood",

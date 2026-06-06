@@ -17,6 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from ultralytics import YOLO
+
+# Limit PyTorch CPU threads to avoid memory overhead and CPU throttling on Render Free Tier
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 import json
 import io
 from PIL import Image
@@ -40,6 +44,33 @@ from datetime import timedelta
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AutoOD-Render")
+
+def get_current_memory_mb() -> float:
+    """Get current RSS memory of the process in MB (optimised for Linux/Render)"""
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return float(parts[1]) / 1024.0
+    except FileNotFoundError:
+        try:
+            import resource
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+        except Exception:
+            pass
+    return 0.0
+
+def trim_memory():
+    """Force release of heap memory back to the OS using glibc malloc_trim"""
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+        logger.debug("Forced malloc_trim completed successfully.")
+    except Exception as e:
+        logger.debug(f"malloc_trim not available: {e}")
 
 # Monkeypatch torch._six for NanoDet compatibility with Torch 2.x
 try:
@@ -67,8 +98,24 @@ app.add_middleware(
 # Initialize Scheduler
 async_scheduler = AsyncIOScheduler()
 
+# Global state for cron job coordination
+CLEANUP_IN_PROGRESS = False
+
 async def run_batch_cleanup():
-    logger.info("Starting batch cleanup...")
+    global CLEANUP_IN_PROGRESS
+    if CLEANUP_IN_PROGRESS:
+        logger.warning("Cleanup execution already in progress. Skipping overlapping run.")
+        return {
+            "status": "skipped",
+            "deleted_count": 0,
+            "message": "Cleanup job already in progress"
+        }
+        
+    CLEANUP_IN_PROGRESS = True
+    start_time = datetime.utcnow()
+    mem_before = get_current_memory_mb()
+    logger.info(f"Starting batch cleanup. Initial Memory: {mem_before:.2f} MB")
+    
     try:
         expired = await get_expired_images(days=7)
         if not expired:
@@ -101,7 +148,9 @@ async def run_batch_cleanup():
                 await delete_image_record(str(doc["_id"]))
                 deleted_count += 1
                 
-        logger.info(f"Batch cleanup completed. Deleted {deleted_count} records.")
+        duration = (datetime.utcnow() - start_time).total_seconds()
+        mem_after = get_current_memory_mb()
+        logger.info(f"Batch cleanup completed in {duration:.3f}s. Deleted {deleted_count} records. Memory: {mem_after:.2f} MB (change: {mem_after - mem_before:.2f} MB)")
         return {
             "status": "success",
             "deleted_count": deleted_count,
@@ -115,6 +164,10 @@ async def run_batch_cleanup():
             "status": "error",
             "message": str(e)
         }
+    finally:
+        CLEANUP_IN_PROGRESS = False
+        gc.collect()
+        trim_memory()
 
 async def daily_cleanup_job():
     logger.info("Starting scheduled cleanup job...")
@@ -122,6 +175,16 @@ async def daily_cleanup_job():
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info(f"🚀 Application starting up. Initial RSS Memory: {get_current_memory_mb():.2f} MB")
+    
+    # Preload the default YOLOv8n model on startup to pre-warm the container and identify OOM early
+    try:
+        logger.info("Pre-warming/Preloading YOLOv8n model...")
+        load_yolo()
+        logger.info(f"Model preloaded. Post-warming RSS Memory: {get_current_memory_mb():.2f} MB")
+    except Exception as e:
+        logger.error(f"Failed to preload default model on startup: {e}")
+
     # Initialize Database
     db_success = await init_db()
     if not db_success:
@@ -167,6 +230,9 @@ async def startup_event():
 # Global variables for the SINGLETON model
 CURRENT_MODEL_ID = None
 ACTIVE_MODEL = None
+
+# Initialize global lock for sequential inference (prevents RAM spikes under concurrent load)
+inference_lock = asyncio.Lock()
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -242,7 +308,8 @@ def load_nanodet():
         raise HTTPException(status_code=500, detail=f"Failed to load NanoDet: {str(e)}")
 
 def run_yolov8n(image: np.ndarray, model_instance, confidence: float = 0.25) -> List[Dict[str, Any]]:
-    results = model_instance.predict(image, conf=confidence, verbose=False)[0]
+    with torch.inference_mode():
+        results = model_instance.predict(image, conf=confidence, verbose=False)[0]
     detections = []
     
     for box in results.boxes:
@@ -257,11 +324,14 @@ def run_yolov8n(image: np.ndarray, model_instance, confidence: float = 0.25) -> 
             "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
         })
     
+    del results
+    gc.collect()
     return detections
 
 def run_nanodet(image: np.ndarray, model_instance, confidence: float = 0.25) -> List[Dict[str, Any]]:
     # NanoDet inference
-    meta, res_list = model_instance.inference(image)
+    with torch.inference_mode():
+        meta, res_list = model_instance.inference(image)
     res = res_list[0] if isinstance(res_list, (list, tuple)) and len(res_list) > 0 else res_list
     if isinstance(res, dict) and 0 in res and isinstance(res[0], dict):
         res = res[0]
@@ -288,6 +358,10 @@ def run_nanodet(image: np.ndarray, model_instance, confidence: float = 0.25) -> 
                 "bbox": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
             })
             
+    del res
+    if 'meta' in locals():
+        del meta
+    gc.collect()
     return detections
 
 @app.get("/api/models")
@@ -306,7 +380,8 @@ async def detect(
     class_filter: str = Form("[]")
 ):
     """Unified detection endpoint with strict singleton memory management"""
-    logger.info(f"Detection request - Model: {model} - Conf: {confidence} - Filter: {class_filter}")
+    mem_before = get_current_memory_mb()
+    logger.info(f"Detection request - Model: {model} - Conf: {confidence} - Filter: {class_filter} | RAM Before: {mem_before:.2f} MB")
     
     model_mapping = {
         "M873.V1": "yolov8n",
@@ -319,21 +394,40 @@ async def detect(
     if not target_id:
         raise HTTPException(status_code=400, detail=f"Invalid model '{model}'")
 
+    img = None
     try:
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
+        # Clean up read buffers
+        del contents
+        del nparr
+        
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
 
-        if target_id == "yolov8n":
-            model_instance = load_yolo()
-            detections = run_yolov8n(img, model_instance, confidence)
-        else:
-            model_instance = load_nanodet()
-            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            detections = run_nanodet(img_rgb, model_instance, confidence)
+        # Resize image to max 800px width/height before running inference to save RAM
+        max_dimension = 800
+        h, w = img.shape[:2]
+        if max(h, w) > max_dimension:
+            scale = max_dimension / max(h, w)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            logger.info(f"Resized image from {w}x{h} to {img.shape[1]}x{img.shape[0]} for memory efficiency")
+
+        start_time = datetime.utcnow()
+        
+        # Serialize inference requests to prevent overlapping memory spikes
+        async with inference_lock:
+            if target_id == "yolov8n":
+                model_instance = load_yolo()
+                detections = run_yolov8n(img, model_instance, confidence)
+            else:
+                model_instance = load_nanodet()
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                detections = run_nanodet(img_rgb, model_instance, confidence)
+        
+        duration = (datetime.utcnow() - start_time).total_seconds()
         
         # Apply class filter if provided
         try:
@@ -348,9 +442,12 @@ async def detect(
         try:
             _, buffer = cv2.imencode('.jpg', img)
             img_bytes = buffer.tobytes()
+            del buffer
             
             # Upload to Cloudinary using optimized logic
             storage_result = await asyncio.to_thread(upload_image, img_bytes)
+            del img_bytes
+            
             if storage_result:
                 annotations = [
                     {
@@ -380,13 +477,19 @@ async def detect(
         except Exception as e:
             logger.error(f"Failed to save record to MongoDB/Cloudinary: {e}")
             # We don't raise HTTPException here to ensure zero breaking changes for the user
-            
+        
+        mem_after = get_current_memory_mb()
+        logger.info(f"API Detect complete in {duration:.3f}s. RAM Change: {mem_before:.2f} MB -> {mem_after:.2f} MB")
         return detections
-
 
     except Exception as e:
         logger.error(f"Inference error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if img is not None:
+            del img
+        gc.collect()
+        trim_memory()
 
 @app.post("/api/detect-folder")
 async def detect_folder(
@@ -394,87 +497,110 @@ async def detect_folder(
     model: str = Form(...),
     confidence: float = Form(0.25)
 ):
-    """Batch folder detection endpoint"""
-    logger.info(f"Folder detection request: {len(files)} files - Model: {model}")
+    """Batch folder detection endpoint with memory footprint limiting"""
+    mem_before = get_current_memory_mb()
+    logger.info(f"Folder detection request: {len(files)} files - Model: {model} | RAM: {mem_before:.2f} MB")
     
     results = []
     processed_count = 0
     total_objects = 0
     
-    # We load the model ONCE for the whole batch
     model_mapping = {"M873.V1": "yolov8n", "M873.V2": "nanodet"}
     target_id = model_mapping.get(model, "yolov8n")
     
-    if target_id == "yolov8n":
-        model_instance = load_yolo()
-    else:
-        model_instance = load_nanodet()
+    async with inference_lock:
+        if target_id == "yolov8n":
+            model_instance = load_yolo()
+        else:
+            model_instance = load_nanodet()
 
-    for file in files:
-        try:
-            contents = await file.read()
-            nparr = np.frombuffer(contents, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if img is None:
-                results.append({"filename": file.filename, "error": "Invalid image"})
-                continue
-
-            if target_id == "yolov8n":
-                detections = run_yolov8n(img, model_instance)
-            else:
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                detections = run_nanodet(img_rgb, model_instance)
-            
-            results.append({
-                "filename": file.filename,
-                "detections": detections
-            })
-            processed_count += 1
-            total_objects += len(detections)
-            
-            # --- NEW: MongoDB & Cloudinary Integration for Batch ---
+        for file in files:
+            img = None
             try:
-                _, buffer = cv2.imencode('.jpg', img)
-                img_bytes = buffer.tobytes()
-                storage_result = await asyncio.to_thread(upload_image, img_bytes)
-                if storage_result:
-                    annotations = [
-                        {
-                            "label": d["class"],
-                            "points": d["bbox"],
-                            "color": "#3B82F6",
-                            "createdAt": datetime.utcnow().isoformat()
-                        } for d in detections
-                    ]
-                    image_doc = {
-                        "filename": file.filename,
-                        "cloudinaryId": storage_result["public_id"],
-                        "imageUrl": storage_result["secure_url"],
-                        "thumbnailUrl": storage_result["thumbnail_url"],
-                        "width": storage_result["width"],
-                        "height": storage_result["height"],
-                        "fileSize": storage_result["fileSize"],
-                        "annotationCount": len(annotations),
-                        "annotations": annotations,
-                        "source": f"detect-folder:{model}",
-                        "createdAt": datetime.utcnow(),
-                        "updatedAt": datetime.utcnow()
-                    }
-                    await save_image_metadata(image_doc)
-            except Exception as e:
-                logger.error(f"Failed to save batch record: {e}")
-
+                contents = await file.read()
+                nparr = np.frombuffer(contents, np.uint8)
+                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
-        except Exception as e:
-            results.append({"filename": file.filename, "error": str(e)})
+                # Cleanup immediate read buffers
+                del contents
+                del nparr
+                
+                if img is None:
+                    results.append({"filename": file.filename, "error": "Invalid image"})
+                    continue
 
+                # Resize image to max 800px for memory efficiency
+                max_dimension = 800
+                h, w = img.shape[:2]
+                if max(h, w) > max_dimension:
+                    scale = max_dimension / max(h, w)
+                    img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+                if target_id == "yolov8n":
+                    detections = run_yolov8n(img, model_instance)
+                else:
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    detections = run_nanodet(img_rgb, model_instance)
+                
+                results.append({
+                    "filename": file.filename,
+                    "detections": detections
+                })
+                processed_count += 1
+                total_objects += len(detections)
+                
+                # --- NEW: MongoDB & Cloudinary Integration for Batch ---
+                try:
+                    _, buffer = cv2.imencode('.jpg', img)
+                    img_bytes = buffer.tobytes()
+                    del buffer
+                    
+                    storage_result = await asyncio.to_thread(upload_image, img_bytes)
+                    del img_bytes
+                    
+                    if storage_result:
+                        annotations = [
+                            {
+                                "label": d["class"],
+                                "points": d["bbox"],
+                                "color": "#3B82F6",
+                                "createdAt": datetime.utcnow().isoformat()
+                            } for d in detections
+                        ]
+                        image_doc = {
+                            "filename": file.filename,
+                            "cloudinaryId": storage_result["public_id"],
+                            "imageUrl": storage_result["secure_url"],
+                            "thumbnailUrl": storage_result["thumbnail_url"],
+                            "width": storage_result["width"],
+                            "height": storage_result["height"],
+                            "fileSize": storage_result["fileSize"],
+                            "annotationCount": len(annotations),
+                            "annotations": annotations,
+                            "source": f"detect-folder:{model}",
+                            "createdAt": datetime.utcnow(),
+                            "updatedAt": datetime.utcnow()
+                        }
+                        await save_image_metadata(image_doc)
+                except Exception as e:
+                    logger.error(f"Failed to save batch record for {file.filename}: {e}")
+                    
+            except Exception as e:
+                results.append({"filename": file.filename, "error": str(e)})
+            finally:
+                if img is not None:
+                    del img
+                gc.collect()
+                trim_memory()
+
+    mem_after = get_current_memory_mb()
+    logger.info(f"Folder detection complete. Processed {processed_count}/{len(files)} files. Final RAM: {mem_after:.2f} MB")
     return {
         "results": results,
         "total_images": len(files),
         "processed_count": processed_count,
         "total_objects": total_objects,
-        "image_files": [{"url": f"/temp/{f.filename}", "filename": f.filename} for f in files] # Placeholder URLs
+        "image_files": [{"url": f"/temp/{f.filename}", "filename": f.filename} for f in files]
     }
 
 @app.post("/api/detect-video")
@@ -709,6 +835,79 @@ async def trigger_cleanup_expired():
     """Manually trigger the cleanup of expired records and images (useful for external cron services)"""
     await daily_cleanup_job()
     return {"message": "Cleanup job for expired records triggered successfully"}
+
+from pydantic import BaseModel
+import zipfile
+import tempfile
+from fastapi import BackgroundTasks
+from core.exporter import Exporter
+
+class ExportRequest(BaseModel):
+    annotations: List[Dict[str, Any]]
+    image_size: Dict[str, int]
+    formats: List[str]
+    classes: List[str]
+
+@app.post("/api/export")
+async def export_annotations(request: ExportRequest, background_tasks: BackgroundTasks):
+    """Export annotations in various formats as a ZIP file"""
+    try:
+        # Create a temporary directory for this export
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Initialize custom exporter for this directory
+            local_exporter = Exporter(export_dir=temp_dir)
+            
+            # Prepare data
+            filename = "image.jpg" # Default filename since we handle single image
+            annotations_dict = {filename: request.annotations}
+            image_sizes = {filename: (request.image_size["width"], request.image_size["height"])}
+            
+            # Export requested formats
+            if "YOLO" in request.formats:
+                local_exporter.export_yolo(annotations_dict, image_sizes, request.classes)
+            
+            if "CSV" in request.formats:
+                local_exporter.export_csv(annotations_dict)
+            
+            if "JSON" in request.formats:
+                metadata = {
+                    'classes': request.classes,
+                    'total_annotations': len(request.annotations)
+                }
+                local_exporter.export_json(annotations_dict, metadata)
+            
+            if "COCO" in request.formats:
+                local_exporter.export_coco(annotations_dict, image_sizes, request.classes)
+            
+            # Create master zip file
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            zip_filename = f"autood_export_{timestamp}.zip"
+            zip_path = os.path.join(tempfile.gettempdir(), zip_filename)
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        if file.endswith('.zip'):
+                            continue
+                            
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, temp_dir)
+                        zipf.write(file_path, arcname)
+            
+            # Schedule cleanup
+            background_tasks.add_task(os.remove, zip_path)
+            
+            return FileResponse(
+                zip_path,
+                media_type="application/zip",
+                filename=zip_filename
+            )
+            
+    except Exception as e:
+        logger.error(f"Export failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Mount Static Files (Frontend) ---
 if os.path.exists(DIST_DIR):

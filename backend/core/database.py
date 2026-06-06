@@ -19,7 +19,13 @@ async def init_db():
     global client, db, collection
     try:
         logger.info(f"Connecting to MongoDB...")
-        client = AsyncIOMotorClient(MONGODB_URI)
+        # Configure connection pooling to optimize thread and socket allocation on Free Tier
+        client = AsyncIOMotorClient(
+            MONGODB_URI,
+            maxPoolSize=5,
+            minPoolSize=1,
+            serverSelectionTimeoutMS=5000
+        )
         db = client[DB_NAME]
         collection = db[COLLECTION_NAME]
         
@@ -105,7 +111,11 @@ async def get_expired_images(days=7):
     
     cutoff = datetime.utcnow() - timedelta(days=days)
     try:
-        cursor = collection.find({"createdAt": {"$lt": cutoff}})
+        # Optimize memory by projecting only required fields (skip large annotations array)
+        cursor = collection.find(
+            {"createdAt": {"$lt": cutoff}},
+            projection={"_id": 1, "cloudinaryId": 1}
+        )
         return await cursor.to_list(length=1000)
     except Exception as e:
         logger.error(f"Error fetching expired records: {e}")

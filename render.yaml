@@ -6,7 +6,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: bash build.sh
-    startCommand: cd backend && gunicorn main_render:app -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: cd backend && uvicorn main_render:app --host 0.0.0.0 --port $PORT --workers 1 --limit-concurrency 10
     envVars:
       - key: PORT
         value: '10000'

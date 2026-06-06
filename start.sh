@@ -12,13 +12,10 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 # Navigate to backend directory
 cd backend
 
-# Start the application with gunicorn
-echo "🔥 Starting FastAPI application with Gunicorn..."
-gunicorn main_render:app \
-  -w 2 \
-  -k uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:${PORT:-10000} \
-  --timeout 120 \
-  --keep-alive 5 \
-  --max-requests 1000 \
-  --max-requests-jitter 50
+# Start the application with uvicorn
+echo "🔥 Starting FastAPI application with Uvicorn..."
+uvicorn main_render:app \
+  --host 0.0.0.0 \
+  --port ${PORT:-10000} \
+  --workers 1 \
+  --limit-concurrency 10
