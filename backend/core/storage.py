@@ -31,25 +31,32 @@ def upload_image(image_bytes, filename=None):
         import io
         import cloudinary.utils
         
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            orig_format = img.format if img.format else "JPEG"
+        with Image.open(io.BytesIO(image_bytes)) as original_img:
+            orig_format = original_img.format if original_img.format else "JPEG"
             
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            if original_img.mode in ("RGBA", "P"):
+                img = original_img.convert("RGB")
                 orig_format = "JPEG"
+            else:
+                img = original_img
             
-            # Resize if width or height exceeds 1024px
-            max_size = 1024
-            orig_width, orig_height = img.size
-            width, height = orig_width, orig_height
-            if max(img.size) > max_size:
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
-                width, height = img.size
-                
-            output = io.BytesIO()
-            img.save(output, format=orig_format, quality=80, optimize=True)
-            compressed_bytes = output.getvalue()
-            file_size = len(compressed_bytes)
+            try:
+                # Resize if width or height exceeds 1024px
+                max_size = 1024
+                orig_width, orig_height = img.size
+                width, height = orig_width, orig_height
+                if max(img.size) > max_size:
+                    img.thumbnail((max_size, max_size), Image.LANCZOS)
+                    width, height = img.size
+                    
+                output = io.BytesIO()
+                img.save(output, format=orig_format, quality=80, optimize=True)
+                compressed_bytes = output.getvalue()
+                file_size = len(compressed_bytes)
+            finally:
+                # Close the converted image instance if one was created
+                if img is not original_img:
+                    img.close()
 
         options = {
             "folder": "autood",
