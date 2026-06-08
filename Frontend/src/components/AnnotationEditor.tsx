@@ -7,7 +7,6 @@ import { AnnotationCanvas } from './AnnotationCanvas';
 import { LabelsSidebar } from './LabelsSidebar';
 import { Annotation, Label, ToolType, Point, BoundingBox } from '@/types/annotation';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { DetectionResponse, ModelResponse, API_BASE_URL } from '@/lib/api-types';
 
 interface VideoFrame {
@@ -63,6 +62,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [imageAnnotations, setImageAnnotations] = useState<{[imageUrl: string]: Annotation[]}>({});
+  const [imageIdMap, setImageIdMap] = useState<{[imageUrl: string]: string}>({});
   const [labels, setLabels] = useState<Label[]>(defaultLabels);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -151,6 +151,49 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
         setIsLoadingModels(false);
       });
   }, []);
+
+  // Fetch images for the given task/project
+  useEffect(() => {
+    if (taskId) {
+      fetch(`${API_BASE_URL}/api/images?projectId=${taskId}&limit=30`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.images && data.images.length > 0) {
+            const urls = data.images.map((img: any) => img.imageUrl);
+            setImageUrls(urls);
+            setImageUrl(urls[0]);
+            
+            // Map annotations
+            const newImageAnnotations: {[url: string]: Annotation[]} = {};
+            const newImageIdMap: {[url: string]: string} = {};
+            data.images.forEach((img: any) => {
+              newImageIdMap[img.imageUrl] = img._id;
+              if (img.annotations && img.annotations.length > 0) {
+                newImageAnnotations[img.imageUrl] = img.annotations.map((ann: any) => ({
+                  id: generateUUID(),
+                  type: 'rectangle', // Assuming rectangle for now based on current logic
+                  x: ann.points[0],
+                  y: ann.points[1],
+                  width: ann.points[2] - ann.points[0],
+                  height: ann.points[3] - ann.points[1],
+                  color: ann.color || '#3B82F6',
+                  labelId: labels.find(l => l.name === ann.label)?.id || defaultLabels[0].id
+                }));
+              }
+            });
+            setImageIdMap(newImageIdMap);
+            setImageAnnotations(newImageAnnotations);
+            if (urls.length > 0) {
+              setAnnotations(newImageAnnotations[urls[0]] || []);
+            }
+          }
+        })
+        .catch(err => {
+          console.error("Failed to fetch project images", err);
+          toast.error("Failed to load project images");
+        });
+    }
+  }, [taskId]);
 
   const pushToHistory = useCallback((newAnnotations: Annotation[]) => {
     const newHistory = history.slice(0, historyIndex + 1);
@@ -273,31 +316,134 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
     }
   };
 
-  const handleSave = () => {
-    toast.success('Annotations saved successfully');
+  const handleSave = async () => {
+    if (!imageUrl) return;
+    
+    // Save annotations locally
+    saveCurrentImageAnnotations();
+    
+    // Save to backend if we have an image ID
+    const imageId = imageIdMap[imageUrl];
+    if (imageId) {
+      const serializedAnnotations = annotations.map(ann => ({
+        label: labels.find(l => l.id === ann.labelId)?.name || 'object',
+        points: [ann.x, ann.y, ann.x + ann.width, ann.y + ann.height],
+        color: ann.color
+      }));
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/images/${imageId}/annotations`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ annotations: serializedAnnotations })
+        });
+        if (response.ok) {
+          toast.success('Annotations saved successfully');
+        } else {
+          toast.error('Failed to save to cloud');
+        }
+      } catch (err) {
+        toast.error('Error saving to cloud');
+      }
+    } else {
+      toast.success('Annotations saved locally');
+    }
   };
 
-  const handleBatchImageUpload = (urls: string[]) => {
+  const handleBatchImageUpload = async (urls: string[]) => {
     console.log('Batch upload received:', urls.length, 'images');
     
     // Clean up existing URLs to prevent memory leaks
     cleanupObjectUrls(imageUrls);
     
-    // Initialize empty annotations for each image
     const newImageAnnotations: {[imageUrl: string]: Annotation[]} = {};
-    urls.forEach(url => {
-      newImageAnnotations[url] = [];
-    });
+    const finalUrls: string[] = [];
+
+    if (taskId) {
+      toast.info('Uploading images to project...');
+      for (const url of urls) {
+        try {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const file = new File([blob], 'image.jpg', { type: blob.type });
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('projectId', taskId);
+          
+          const uploadRes = await fetch(`${API_BASE_URL}/api/images/upload`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (uploadRes.ok) {
+             const data = await uploadRes.json();
+             finalUrls.push(data.imageUrl);
+             newImageAnnotations[data.imageUrl] = [];
+             setImageIdMap(prev => ({ ...prev, [data.imageUrl]: data._id }));
+          }
+        } catch (err) {
+          console.error("Failed to upload image", err);
+        }
+      }
+      toast.success(`Uploaded ${finalUrls.length} images successfully`);
+    } else {
+      finalUrls.push(...urls);
+      urls.forEach(url => {
+        newImageAnnotations[url] = [];
+      });
+      toast.success(`Loaded ${urls.length} images for batch processing`);
+    }
     
-    setImageUrls(urls);
+    setImageUrls(finalUrls);
     setCurrentImageIndex(0);
     setIsVideoMode(false);
-    setImageUrl(urls[0]);
+    if (finalUrls.length > 0) setImageUrl(finalUrls[0]);
     setImageAnnotations(newImageAnnotations);
     setAnnotations([]);
     setHistory([[]]);
     setHistoryIndex(0);
-    toast.success(`Loaded ${urls.length} images for batch processing`);
+  };
+
+  const handleSingleImageUpload = async (url: string) => {
+    let finalUrl = url;
+    
+    if (taskId) {
+      toast.info('Uploading image to project...');
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const file = new File([blob], 'image.jpg', { type: blob.type });
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('projectId', taskId);
+        
+        const uploadRes = await fetch(`${API_BASE_URL}/api/images/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (uploadRes.ok) {
+           const data = await uploadRes.json();
+           finalUrl = data.imageUrl;
+           setImageIdMap(prev => ({ ...prev, [finalUrl]: data._id }));
+           toast.success('Image uploaded successfully');
+        } else {
+           toast.error('Failed to upload image');
+        }
+      } catch (err) {
+        console.error("Failed to upload single image", err);
+        toast.error('Error uploading image');
+      }
+    }
+    
+    setImageUrl(finalUrl);
+    if (!imageUrls.includes(finalUrl)) {
+      setImageUrls(prev => [...prev, finalUrl]);
+      setImageAnnotations(prev => ({ ...prev, [finalUrl]: [] }));
+    }
+    setAnnotations([]);
+    setHistory([[]]);
+    setHistoryIndex(0);
   };
 
   const handleFolderUploadWithDetection = async (files: FileList) => {
@@ -321,11 +467,16 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
 
       // Create FormData with all image files
       const formData = new FormData();
+      const filenameToBlob: {[key: string]: File} = {};
       imageFiles.forEach(file => {
         formData.append('files', file);
+        filenameToBlob[file.name] = file;
       });
       formData.append('model', selectedModel);
       formData.append('confidence', '0.25');
+      if (taskId) {
+        formData.append('projectId', taskId);
+      }
 
       // Send to backend for folder detection
       const response = await fetch(`${API_BASE_URL}/api/detect-folder`, {
@@ -342,6 +493,15 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
 
       // Process results and create image URLs
       const newImageUrls = data.image_files.map((file) => file.url);
+      
+      // Update imageIdMap with the returned IDs from data.image_files
+      const addedImageIds: {[url: string]: string} = {};
+      data.image_files.forEach(f => {
+        if (f.id) {
+          addedImageIds[f.url] = f.id;
+        }
+      });
+      setImageIdMap(prev => ({ ...prev, ...addedImageIds }));
       
       // Store detection results for each image
       const allDetections: { [key: string]: DetectionResponse['detections'] } = {};
@@ -1032,7 +1192,7 @@ export const AnnotationEditor = ({ taskId, onBack, labelOpacity = 25 }: Annotati
           onAnnotationAdd={handleAnnotationAdd}
           onAnnotationSelect={setSelectedAnnotationId}
           onAnnotationUpdate={handleAnnotationUpdate}
-          onImageUpload={setImageUrl}
+          onImageUpload={handleSingleImageUpload}
           onBatchImageUpload={handleBatchImageUpload}
           onVideoUpload={handleVideoUpload}
           onFolderUpload={handleFolderUploadWithDetection}

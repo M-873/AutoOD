@@ -19,7 +19,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { supabase } from '@/integrations/supabase/client';
+import { API_BASE_URL } from '@/lib/api-types';
 import { toast } from 'sonner';
 
 const taskSchema = z.object({
@@ -47,46 +47,18 @@ export const CreateTaskDialog = ({ open, onOpenChange, onTaskCreated }: CreateTa
   const onSubmit = async (data: TaskFormData) => {
     setIsLoading(true);
     try {
-      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
-      
-      let userId = 'demo-user-id';
-      if (!isDemoMode) {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (userError || !userData.user) {
-          throw new Error('You must be logged in to create a project');
-        }
-        userId = userData.user.id;
-      } else {
-        const demoUser = localStorage.getItem('demo_user_auth');
-        if (!demoUser) throw new Error('You must be logged in to create a project');
-        userId = JSON.parse(demoUser).id;
-      }
+      const response = await fetch(`${API_BASE_URL}/api/projects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+        }),
+      });
 
-      if (isDemoMode) {
-        const newTask = {
-          id: Math.random().toString(36).substring(2, 11),
-          name: data.name,
-          assignee: null,
-          user_id: userId,
-          image_url: null,
-          status: 'pending',
-          progress: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        const tasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
-        tasks.push(newTask);
-        localStorage.setItem('demo_tasks', JSON.stringify(tasks));
-      } else {
-        const { error } = await supabase.from('tasks').insert({
-          name: data.name,
-          assignee: null,
-          user_id: userId,
-          image_url: null,
-          status: 'pending',
-          progress: 0,
-        });
-        if (error) throw error;
+      if (!response.ok) {
+        throw new Error('Failed to create project');
       }
 
       toast.success('Project created successfully');

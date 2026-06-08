@@ -3,7 +3,7 @@ import { Plus, Search, Filter, MoreVertical, Play, CheckCircle2, Clock, AlertCir
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { API_BASE_URL } from '@/lib/api-types';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { format } from 'date-fns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -40,21 +40,17 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
+      const response = await fetch(`${API_BASE_URL}/api/projects`);
+      if (!response.ok) throw new Error('Failed to fetch projects');
+      const data = await response.json();
       
-      if (isDemoMode) {
-        const demoTasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
-        demoTasks.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        setTasks(demoTasks);
-      } else {
-        const { data, error } = await supabase
-          .from('tasks')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setTasks(data || []);
-      }
+      // Ensure data aligns with Task interface expectations
+      const mappedData = data.map((t: any) => ({
+        ...t,
+        created_at: t.createdAt || t.created_at || new Date().toISOString(),
+        updated_at: t.updatedAt || t.updated_at || new Date().toISOString(),
+      }));
+      setTasks(mappedData);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     } finally {
@@ -65,18 +61,10 @@ export const TaskList = ({ onTaskSelect }: TaskListProps) => {
   const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const isDemoMode = import.meta.env.VITE_SUPABASE_URL === undefined || String(import.meta.env.VITE_SUPABASE_URL).includes('placeholder');
-      if (isDemoMode) {
-        const demoTasks = JSON.parse(localStorage.getItem('demo_tasks') || '[]');
-        const updatedTasks = demoTasks.filter((t: any) => t.id !== taskId);
-        localStorage.setItem('demo_tasks', JSON.stringify(updatedTasks));
-        fetchTasks();
-        toast.success("Project deleted successfully");
-        return;
-      }
-      
-      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-      if (error) throw error;
+      const response = await fetch(`${API_BASE_URL}/api/projects/${taskId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete project');
       
       fetchTasks();
       toast.success("Project deleted successfully");

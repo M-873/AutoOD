@@ -36,7 +36,7 @@ def download_weights():
             print(f"❌ Failed to download NanoDet weight: {e}")
             # Don't fail the whole build if just weights fail, we can try at runtime
     else:
-        print(f"✅ NanoDet weight already exists.")
+        print("✅ NanoDet weight already exists.")
 
     # 3. NanoDet Config
     nanodet_cfg = os.path.join(base_dir, "nanodet-plus-m_416.yml")
@@ -50,7 +50,7 @@ def download_weights():
         except Exception as e:
             print(f"❌ Failed to download NanoDet config: {e}")
     else:
-        print(f"✅ NanoDet config already exists.")
+        print("✅ NanoDet config already exists.")
 
 if __name__ == "__main__":
     download_weights()

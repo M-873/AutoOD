@@ -12,7 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "backend"))
 load_dotenv(os.path.join(os.path.dirname(__file__), "backend", ".env"))
 
 from core.database import init_db, save_annotation, get_expired_records
-from core.storage import upload_image, delete_image
+from core.storage import upload_image
 
 async def test_integration():
     print("Starting Integration Test...")

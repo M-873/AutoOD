@@ -35,7 +35,10 @@ from core.database import (
     get_image_by_id,
     update_image_annotations,
     delete_image_record,
-    get_expired_images
+    get_expired_images,
+    create_project,
+    get_all_projects,
+    delete_project_record
 )
 from core.storage import upload_image, delete_image
 from fastapi import Header
@@ -478,6 +481,18 @@ async def detect(
             logger.error(f"Failed to save record to MongoDB/Cloudinary: {e}")
             # We don't raise HTTPException here to ensure zero breaking changes for the user
         
+        # Scale back the bounding boxes if the image was resized
+        if scale < 1.0:
+            inverse_scale = 1.0 / scale
+            for d in detections:
+                if "bbox" in d and len(d["bbox"]) == 4:
+                    d["bbox"] = [
+                        round(d["bbox"][0] * inverse_scale, 2),
+                        round(d["bbox"][1] * inverse_scale, 2),
+                        round(d["bbox"][2] * inverse_scale, 2),
+                        round(d["bbox"][3] * inverse_scale, 2)
+                    ]
+        
         mem_after = get_current_memory_mb()
         logger.info(f"API Detect complete in {duration:.3f}s. RAM Change: {mem_before:.2f} MB -> {mem_after:.2f} MB")
         return detections
@@ -495,7 +510,8 @@ async def detect(
 async def detect_folder(
     files: List[UploadFile] = File(...),
     model: str = Form(...),
-    confidence: float = Form(0.25)
+    confidence: float = Form(0.25),
+    projectId: Optional[str] = Form(None)
 ):
     """Batch folder detection endpoint with memory footprint limiting"""
     mem_before = get_current_memory_mb()
@@ -542,6 +558,18 @@ async def detect_folder(
                     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     detections = run_nanodet(img_rgb, model_instance)
                 
+                # Scale back the bounding boxes if the image was resized
+                if scale < 1.0:
+                    inverse_scale = 1.0 / scale
+                    for d in detections:
+                        if "bbox" in d and len(d["bbox"]) == 4:
+                            d["bbox"] = [
+                                round(d["bbox"][0] * inverse_scale, 2),
+                                round(d["bbox"][1] * inverse_scale, 2),
+                                round(d["bbox"][2] * inverse_scale, 2),
+                                round(d["bbox"][3] * inverse_scale, 2)
+                            ]
+
                 results.append({
                     "filename": file.filename,
                     "detections": detections
@@ -578,6 +606,7 @@ async def detect_folder(
                             "annotationCount": len(annotations),
                             "annotations": annotations,
                             "source": f"detect-folder:{model}",
+                            "projectId": projectId,
                             "createdAt": datetime.utcnow(),
                             "updatedAt": datetime.utcnow()
                         }
@@ -629,14 +658,16 @@ async def health():
 @app.post("/api/clear-cache")
 async def clear_cache():
     """Manually trigger model unloading and garbage collection"""
-    global ACTIVE_MODEL, CURRENT_MODEL_ID
     unload_current_model()
     return {"message": "Memory cache cleared successfully"}
 
 # --- New Production APIs ---
 
 @app.post("/api/images/upload")
-async def upload_image_route(file: UploadFile = File(...)):
+async def upload_image_route(
+    file: UploadFile = File(...),
+    projectId: Optional[str] = Form(None)
+):
     # Validate file size (max 3MB)
     contents = await file.read()
     if len(contents) > 3 * 1024 * 1024:
@@ -664,6 +695,7 @@ async def upload_image_route(file: UploadFile = File(...)):
         "annotationCount": 0,
         "annotations": [],
         "source": "upload",
+        "projectId": projectId,
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow()
     }
@@ -679,7 +711,11 @@ async def upload_image_route(file: UploadFile = File(...)):
     return image_doc
 
 @app.get("/api/images")
-async def get_images_route(page: int = 1, limit: int = 20):
+async def get_images_route(
+    page: int = 1,
+    limit: int = 20,
+    projectId: Optional[str] = None
+):
     if page < 1: page = 1
     if limit < 1: limit = 20
     if limit > 30: limit = 30
@@ -691,6 +727,8 @@ async def get_images_route(page: int = 1, limit: int = 20):
     # Filter: Only show last 7 days data
     cutoff = datetime.utcnow() - timedelta(days=7)
     query = {"createdAt": {"$gte": cutoff}}
+    if projectId:
+        query["projectId"] = projectId
     
     total_count = await coll.count_documents(query)
     skip = (page - 1) * limit
@@ -825,10 +863,49 @@ async def health_check():
         logger.error(f"Cloudinary ping failed: {e}")
         
     return {
+        "status": "healthy",
         "mongodb": mongodb_status,
-        "cloudinary": cloudinary_status,
-        "timestamp": datetime.utcnow().isoformat()
+        "cloudinary": cloudinary_status
     }
+
+# --- Project APIs ---
+@app.post("/api/projects")
+async def create_project_route(payload: dict):
+    if "name" not in payload:
+        raise HTTPException(status_code=400, detail="Project name is required")
+        
+    doc_id = await create_project(payload)
+    if not doc_id:
+        raise HTTPException(status_code=500, detail="Failed to create project")
+        
+    payload["_id"] = doc_id
+    payload["id"] = doc_id
+    return payload
+
+@app.get("/api/projects")
+async def get_projects_route():
+    projects = await get_all_projects()
+    return projects
+
+@app.delete("/api/projects/{id}")
+async def delete_project_route(id: str):
+    success = await delete_project_record(id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found or already deleted")
+        
+    # Cascade delete images associated with this project
+    coll = get_collection()
+    if coll is not None:
+        cursor = coll.find({"projectId": id})
+        images = await cursor.to_list(length=1000)
+        for img in images:
+            img_id = str(img["_id"])
+            public_id = img.get("cloudinaryId") or img.get("public_id")
+            if public_id:
+                await asyncio.to_thread(delete_image, public_id)
+            await delete_image_record(img_id)
+            
+    return {"message": "Project and associated images deleted successfully"}
 
 @app.post("/api/cleanup-expired")
 async def trigger_cleanup_expired():

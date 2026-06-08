@@ -11,15 +11,17 @@ logger = logging.getLogger("AutoOD-Database")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = "autood"
 COLLECTION_NAME = "images"
+PROJECTS_COLLECTION_NAME = "projects"
 
 client = None
 db = None
 collection = None
+projects_collection = None
 
 async def init_db():
-    global client, db, collection
+    global client, db, collection, projects_collection
     try:
-        logger.info(f"Connecting to MongoDB...")
+        logger.info("Connecting to MongoDB...")
         # Configure connection pooling to optimize thread and socket allocation on Free Tier
         client = AsyncIOMotorClient(
             MONGODB_URI,
@@ -29,6 +31,7 @@ async def init_db():
         )
         db = client[DB_NAME]
         collection = db[COLLECTION_NAME]
+        projects_collection = db[PROJECTS_COLLECTION_NAME]
         
         # Drop existing index if options conflict (common during TTL duration updates)
         try:
@@ -39,6 +42,7 @@ async def init_db():
             
         await collection.create_index("createdAt", name="createdAt_1")
         await collection.create_index("cloudinaryId", name="cloudinaryId_1", unique=True, sparse=True)
+        await projects_collection.create_index("createdAt", name="createdAt_1")
         logger.info("MongoDB initialized with standard createdAt index and unique sparse cloudinaryId index.")
         return True
     except Exception as e:
@@ -49,6 +53,9 @@ async def init_db():
 
 def get_collection():
     return collection
+
+def get_projects_collection():
+    return projects_collection
 
 async def save_image_metadata(data: dict):
     if collection is None:
@@ -145,4 +152,50 @@ async def save_annotation(data: dict):
 async def get_expired_records(days=7):
     logger.info("get_expired_records legacy wrapper called")
     return await get_expired_images(days=days)
+
+# --- Project Management Functions ---
+async def create_project(data: dict):
+    if projects_collection is None:
+        return None
+    try:
+        if "createdAt" not in data:
+            data["createdAt"] = datetime.utcnow()
+        if "updatedAt" not in data:
+            data["updatedAt"] = datetime.utcnow()
+        if "status" not in data:
+            data["status"] = "pending"
+        if "progress" not in data:
+            data["progress"] = 0
+            
+        result = await projects_collection.insert_one(data)
+        return str(result.inserted_id)
+    except Exception as e:
+        logger.error(f"Error saving project to MongoDB: {e}")
+        return None
+
+async def get_all_projects(days=7):
+    if projects_collection is None:
+        return []
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        cursor = projects_collection.find({"createdAt": {"$gte": cutoff}}).sort("createdAt", -1)
+        records = await cursor.to_list(length=100)
+        for r in records:
+            r["_id"] = str(r["_id"])
+            if "id" not in r:
+                r["id"] = r["_id"]
+        return records
+    except Exception as e:
+        logger.error(f"Error fetching projects: {e}")
+        return []
+
+async def delete_project_record(project_id: str):
+    if projects_collection is None:
+        return False
+    try:
+        result = await projects_collection.delete_one({"_id": ObjectId(project_id)})
+        return result.deleted_count > 0
+    except Exception as e:
+        logger.error(f"Error deleting project record {project_id}: {e}")
+        return False
 
