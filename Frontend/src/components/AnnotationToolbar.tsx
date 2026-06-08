@@ -177,13 +177,15 @@ export const AnnotationToolbar = ({
       <div className="flex items-center gap-2">
         <Select value={selectedModel} onValueChange={onModelChange} disabled={isLoadingModels}>
           <SelectTrigger className="w-[180px] h-8 bg-secondary border-border text-sm">
-            <SelectValue placeholder={isLoadingModels ? "Loading..." : "Select model"} />
+            <SelectValue placeholder={isLoadingModels ? (
+              <span className="loading-dots">Loading<span>.</span><span>.</span><span>.</span></span>
+            ) : "Select model"} />
           </SelectTrigger>
           <SelectContent>
             {isLoadingModels ? (
               <div className="flex items-center justify-center py-2 gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading models...</span>
+                <span className="loading-dots">Loading<span>.</span><span>.</span><span>.</span></span>
               </div>
             ) : (
               models.map((model) => (

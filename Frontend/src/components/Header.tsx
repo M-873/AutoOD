@@ -4,8 +4,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 
 import { HamburgerMenu } from '@/components/HamburgerMenu';
 const Logo = () => (
-  <div className="text-xl font-bold tracking-tight cursor-pointer">
-    MyApp
+  <div className="text-xl font-bold tracking-tight cursor-pointer flex">
+    <span className="text-blue-500">AUTO</span>
+    <span className="text-white">OD</span>
   </div>
 );
 import { toast } from 'sonner';
